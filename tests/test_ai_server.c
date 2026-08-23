@@ -346,7 +346,7 @@ static void test_virtual_screen_phrase(void) {
   char json[2048];
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"screen\":\"PHRASE\"") != NULL, "Screen identified as PHRASE");
-  TEST_ASSERT(strstr(json, "\"input\":\"NOTE\"") != NULL, "Active input identified as NOTE");
+  TEST_ASSERT(strstr(json, "\"input\":\"NOTE_00\"") != NULL, "Active input identified as NOTE_00");
   TEST_ASSERT(strstr(json, "\"value\":\"C-4\"") != NULL, "Current value is C-4");
   TEST_ASSERT(strstr(json, "\"cursor_col\":3") != NULL, "Cursor col is 3");
   TEST_ASSERT(strstr(json, "\"cursor_row\":4") != NULL, "Cursor row is 4");
@@ -355,16 +355,16 @@ static void test_virtual_screen_phrase(void) {
   ai_screen_get_text_grid(grid, sizeof(grid), 1);
   TEST_ASSERT(strstr(grid, "[C-4]") != NULL, "Text grid contains [C-4] marked cursor");
 
-  // Move cursor to VELOCITY (col 7, row 4, width 2 chars = 16px)
+  // Move cursor to VOLUME (col 7, row 4, width 2 chars = 16px)
   ai_screen_on_draw_rect(7 * 8, 4 * 8, 16, 8, 0, 255, 255);
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"VELOCITY\"") != NULL, "Active input identified as VELOCITY");
+  TEST_ASSERT(strstr(json, "\"input\":\"VOLUME_00\"") != NULL, "Active input identified as VOLUME_00");
   TEST_ASSERT(strstr(json, "\"value\":\"FF\"") != NULL, "Current value is FF");
 
-  // Move cursor to FX1 (col 13, row 4, width 6 chars)
+  // Move cursor to FX1 (col 13, row 4, width 3 chars = 24px)
   ai_screen_on_draw_rect(13 * 8, 4 * 8, 24, 8, 0, 255, 255);
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"FX1\"") != NULL, "Active input identified as FX1");
+  TEST_ASSERT(strstr(json, "\"input\":\"FX1_00\"") != NULL, "Active input identified as FX1_00");
   TEST_ASSERT(strstr(json, "\"value\":\"VOL\"") != NULL, "Current value is VOL");
 }
 

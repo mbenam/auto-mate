@@ -112,16 +112,16 @@ static int g_cur_min_x = -1;
 static int g_cur_min_y = -1;
 static int g_cur_max_x = -1;
 static int g_cur_max_y = -1;
+static int g_cur_corner_count = 0;
 static Uint64 g_last_corner_tick = 0;
 
-void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h,
-                            uint8_t r, uint8_t g, uint8_t b) {
+void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t g, uint8_t b) {
   if (!screen_initialized) ai_screen_init();
 
   if (screen_mutex) SDL_LockMutex(screen_mutex);
 
-  // Fullscreen background fill / screen clear
-  if (px_x == 0 && px_y <= 0 && w >= 300 && h >= 220) {
+  if (px_x == 0 && px_y == 0 && w >= 320 && h >= 240) {
+    // Screen clear / background fill
     g_screen_state.bg_theme_r = r;
     g_screen_state.bg_theme_g = g;
     g_screen_state.bg_theme_b = b;
@@ -134,6 +134,7 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h,
     g_cur_min_y = -1;
     g_cur_max_x = -1;
     g_cur_max_y = -1;
+    g_cur_corner_count = 0;
   } else if (w > 0 && h > 0 && px_x < 240) {
     Uint64 now = SDL_GetTicks();
 
@@ -146,27 +147,31 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h,
         if (px_y < g_cur_min_y) g_cur_min_y = px_y;
         if (px_x + w > g_cur_max_x) g_cur_max_x = px_x + w;
         if (px_y + h > g_cur_max_y) g_cur_max_y = px_y + h;
+        g_cur_corner_count++;
       } else {
         // Start a new corner cluster
         g_cur_min_x = px_x;
         g_cur_min_y = px_y;
         g_cur_max_x = px_x + w;
         g_cur_max_y = px_y + h;
+        g_cur_corner_count = 1;
       }
       g_last_corner_tick = now;
 
-      // The true cursor position is always at the top-left minimum (min_x, min_y)
-      int col = g_cur_min_x / 8;
-      int row = g_cur_min_y / 8;
-      int cols_wide = (g_cur_max_x - g_cur_min_x + 7) / 8;
-      if (cols_wide < 1) cols_wide = 1;
-      if (cols_wide > 20) cols_wide = 20;
+      // An authentic M8 cursor bracket has multiple corner segments and spans at least 10x7 pixels
+      if (g_cur_corner_count >= 3 && (g_cur_max_x - g_cur_min_x) >= 10 && (g_cur_max_y - g_cur_min_y) >= 7) {
+        int col = g_cur_min_x / 8;
+        int row = g_cur_min_y / 8;
+        int cols_wide = (g_cur_max_x - g_cur_min_x + 7) / 8;
+        if (cols_wide < 1) cols_wide = 1;
+        if (cols_wide > 20) cols_wide = 20;
 
-      if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
-        g_screen_state.cursor_col = col;
-        g_screen_state.cursor_row = row;
-        g_screen_state.cursor_width = cols_wide;
-        g_screen_state.cursor_height = 1;
+        if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
+          g_screen_state.cursor_col = col;
+          g_screen_state.cursor_row = row;
+          g_screen_state.cursor_width = cols_wide;
+          g_screen_state.cursor_height = 1;
+        }
       }
     }
     // 2. Check for solid block selection highlights (e.g. in menus / project view)
@@ -448,6 +453,47 @@ static void snap_cursor_to_token(int row, int *col, int *width) {
     }
   }
 
+  // PHRASE Screen: Note, Vol, Inst, FX1, FX1_Val, FX2, FX2_Val, FX3, FX3_Val
+  if (strcmp(g_screen_state.active_screen, "PHRASE") == 0 && row >= 3 && row <= 28) {
+    if (c >= 2 && c <= 5) {
+      *col = 3;
+      *width = 3;
+      return;
+    } else if (c >= 6 && c <= 8) {
+      *col = 7;
+      *width = 2;
+      return;
+    } else if (c >= 9 && c <= 11) {
+      *col = 10;
+      *width = 2;
+      return;
+    } else if (c >= 12 && c <= 15) {
+      *col = 13;
+      *width = 3;
+      return;
+    } else if (c >= 16 && c <= 17) {
+      *col = 16;
+      *width = 2;
+      return;
+    } else if (c >= 18 && c <= 21) {
+      *col = 19;
+      *width = 3;
+      return;
+    } else if (c >= 22 && c <= 23) {
+      *col = 22;
+      *width = 2;
+      return;
+    } else if (c >= 24 && c <= 27) {
+      *col = 25;
+      *width = 3;
+      return;
+    } else if (c >= 28 && c <= 30) {
+      *col = 28;
+      *width = 2;
+      return;
+    }
+  }
+
   int start = c;
   int end = c;
 
@@ -608,6 +654,68 @@ static void analyze_screen_state(void) {
       } else if (col >= 5 && col <= 8) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
                  "TRANSPOSE_%s", step_hex);
+        matched = 1;
+      } else if (col <= 1) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "STEP_%s", step_hex);
+        matched = 1;
+      }
+    }
+    // Special Dynamic Screen Matrix: PHRASE (Steps 00..0F: Note, Volume, Instrument, FX1, FX1_Val, FX2, FX2_Val, FX3, FX3_Val)
+    else if (strcmp(g_screen_state.active_screen, "PHRASE") == 0 && row >= 3 && row <= 28) {
+      const char *line = g_screen_state.text[row];
+      char step_hex[4] = "00";
+      int p = 0;
+      while (line[p] == ' ' || line[p] == '<') p++;
+      if (isxdigit((unsigned char)line[p])) {
+        if (isxdigit((unsigned char)line[p + 1])) {
+          step_hex[0] = (char)toupper((unsigned char)line[p]);
+          step_hex[1] = (char)toupper((unsigned char)line[p + 1]);
+          step_hex[2] = '\0';
+        } else {
+          step_hex[0] = '0';
+          step_hex[1] = (char)toupper((unsigned char)line[p]);
+          step_hex[2] = '\0';
+        }
+      } else {
+        snprintf(step_hex, sizeof(step_hex), "%02X", row >= 7 ? row - 7 : row);
+      }
+
+      if (col >= 2 && col <= 5) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "NOTE_%s", step_hex);
+        matched = 1;
+      } else if (col >= 6 && col <= 8) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "VOLUME_%s", step_hex);
+        matched = 1;
+      } else if (col >= 9 && col <= 11) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "INSTRUMENT_%s", step_hex);
+        matched = 1;
+      } else if (col >= 12 && col <= 15) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "FX1_%s", step_hex);
+        matched = 1;
+      } else if (col >= 16 && col <= 17) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "FX1_VAL_%s", step_hex);
+        matched = 1;
+      } else if (col >= 18 && col <= 21) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "FX2_%s", step_hex);
+        matched = 1;
+      } else if (col >= 22 && col <= 23) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "FX2_VAL_%s", step_hex);
+        matched = 1;
+      } else if (col >= 24 && col <= 27) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "FX3_%s", step_hex);
+        matched = 1;
+      } else if (col >= 28 && col <= 31) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "FX3_VAL_%s", step_hex);
         matched = 1;
       } else if (col <= 1) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
