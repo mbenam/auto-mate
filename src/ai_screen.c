@@ -139,9 +139,9 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h,
 
     // 1. Check for small corner brackets of the M8 cursor (e.g. w <= 4, h <= 4)
     if (w <= 4 && h <= 4) {
-      // If close to active corner cluster and within 100ms, aggregate
-      if (g_cur_min_x >= 0 && (now - g_last_corner_tick < 100) &&
-          abs(px_x - g_cur_min_x) <= 32 && abs(px_y - g_cur_min_y) <= 16) {
+      // If close to active corner cluster and within 150ms, aggregate
+      if (g_cur_min_x >= 0 && (now - g_last_corner_tick < 150) &&
+          abs(px_x - g_cur_min_x) <= 180 && abs(px_y - g_cur_min_y) <= 18) {
         if (px_x < g_cur_min_x) g_cur_min_x = px_x;
         if (px_y < g_cur_min_y) g_cur_min_y = px_y;
         if (px_x + w > g_cur_max_x) g_cur_max_x = px_x + w;
@@ -160,7 +160,7 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h,
       int row = g_cur_min_y / 8;
       int cols_wide = (g_cur_max_x - g_cur_min_x + 7) / 8;
       if (cols_wide < 1) cols_wide = 1;
-      if (cols_wide > 16) cols_wide = 16;
+      if (cols_wide > 20) cols_wide = 20;
 
       if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
         g_screen_state.cursor_col = col;
@@ -170,12 +170,12 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h,
       }
     }
     // 2. Check for solid block selection highlights (e.g. in menus / project view)
-    else if (w >= 6 && h >= 6 && w <= 200 && h <= 16) {
+    else if (w >= 6 && h >= 6 && w <= 220 && h <= 18) {
       int col = px_x / 8;
       int row = px_y / 8;
       int cols_wide = (w + 7) / 8;
       if (cols_wide < 1) cols_wide = 1;
-      if (cols_wide > 16) cols_wide = 16;
+      if (cols_wide > 20) cols_wide = 20;
 
       if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
         g_screen_state.cursor_col = col;
@@ -201,18 +201,26 @@ static void extract_token_at(const char *line, int col, char *out_buf, size_t ou
   out_buf[0] = '\0';
   if (!line || col < 0 || col >= (int)strlen(line)) return;
 
-  // If character at col is a space, check if there is a word starting immediately after or before
-  int start = col;
-  int end = col;
+  int len = (int)strlen(line);
+  int c = col;
 
-  if (line[col] == ' ') {
-    out_buf[0] = ' ';
-    out_buf[1] = '\0';
-    return;
+  // If pointing to space, check adjacent characters
+  if (line[c] == ' ') {
+    if (c + 1 < len && line[c + 1] != ' ') {
+      c = c + 1;
+    } else if (c - 1 >= 0 && line[c - 1] != ' ') {
+      c = c - 1;
+    } else {
+      out_buf[0] = '\0';
+      return;
+    }
   }
 
+  int start = c;
+  int end = c;
+
   while (start > 0 && line[start - 1] != ' ') start--;
-  while (line[end] != '\0' && line[end] != ' ') end++;
+  while (end < len && line[end] != ' ') end++;
 
   int token_len = end - start;
   if (token_len > (int)out_len - 1) token_len = (int)out_len - 1;
@@ -276,6 +284,26 @@ static const m8_static_field_map_s g_field_map[] = {
     {"SONG", 3, 24, 17, 19, "TRACK6"},
     {"SONG", 3, 24, 20, 22, "TRACK7"},
     {"SONG", 3, 24, 23, 25, "TRACK8"},
+
+    // PROJECT Screen
+    {"PROJECT", 3, 5, 13, 24, "TEMPO"},
+    {"PROJECT", 6, 6, 13, 24, "TRANSPOSE"},
+    {"PROJECT", 7, 7, 13, 26, "GROOVE"},
+    {"PROJECT", 8, 9, 13, 28, "SCALE"},
+    {"PROJECT", 10, 11, 13, 28, "LIVE_QUANTIZ"},
+    {"PROJECT", 12, 13, 12, 21, "MIDI_SETTINGS"},
+    {"PROJECT", 12, 13, 22, 32, "MIDI_MAPPINGS"},
+    {"PROJECT", 14, 15, 12, 26, "SONG_NAME"},
+    {"PROJECT", 16, 16, 12, 17, "PROJECT_LOAD"},
+    {"PROJECT", 16, 16, 18, 22, "PROJECT_SAVE"},
+    {"PROJECT", 16, 16, 23, 28, "PROJECT_NEW"},
+    {"PROJECT", 17, 17, 12, 19, "EXPORT_RENDER"},
+    {"PROJECT", 17, 17, 20, 28, "EXPORT_BUNDLE"},
+    {"PROJECT", 18, 18, 12, 20, "CLEAR_PHRASES"},
+    {"PROJECT", 18, 18, 21, 30, "CLEAR_INST_TBL"},
+    {"PROJECT", 19, 20, 12, 30, "VIEW_INST_POOL"},
+    {"PROJECT", 21, 21, 12, 30, "VIEW_TIME_STATS"},
+    {"PROJECT", 22, 23, 12, 30, "SYSTEM_SETTINGS"},
 
     // TABLE Screen (Steps 00..0F on rows 3..18)
     {"TABLE", 3, 18, 0, 1, "STEP"},
