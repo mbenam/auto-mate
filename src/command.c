@@ -5,6 +5,7 @@
 
 #include "command.h"
 #include "render.h"
+#include "ai_screen.h"
 #include <assert.h>
 
 #define ArrayCount(x) sizeof(x) / sizeof((x)[1])
@@ -95,6 +96,8 @@ int process_command(const uint8_t *recv_buf, uint32_t size) {
     }
 
     draw_rectangle(&rectcmd);
+    ai_screen_on_draw_rect(rectcmd.pos.x, rectcmd.pos.y, rectcmd.size.width, rectcmd.size.height,
+                           rectcmd.color.r, rectcmd.color.g, rectcmd.color.b);
     return 1;
   }
 
@@ -112,6 +115,9 @@ int process_command(const uint8_t *recv_buf, uint32_t size) {
         {recv_buf[6], recv_buf[7], recv_buf[8]},              // foreground r/g/b
         {recv_buf[9], recv_buf[10], recv_buf[11]}};           // background r/g/b
     draw_character(&charcmd);
+    ai_screen_on_draw_char(charcmd.c, charcmd.pos.x, charcmd.pos.y,
+                           charcmd.foreground.r, charcmd.foreground.g, charcmd.foreground.b,
+                           charcmd.background.r, charcmd.background.g, charcmd.background.b);
     return 1;
   }
 

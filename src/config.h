@@ -15,6 +15,11 @@ typedef struct config_params_s {
   unsigned int audio_buffer_size;
   char *audio_device_name;
 
+  // Feature E: Headless / Daemon mode & Logging
+  unsigned int headless;
+  char *log_filename;
+  unsigned int log_level;
+
   unsigned int key_up;
   unsigned int key_left;
   unsigned int key_down;

@@ -13,6 +13,9 @@
 #include <stdlib.h>
 
 #include "SDL2_inprint.h"
+#include "ai_server.h"
+#include "ai_logger.h"
+#include "ai_screen.h"
 #include "backends/audio.h"
 #include "backends/m8.h"
 #include "common.h"
@@ -74,6 +77,10 @@ static void do_wait_for_device(struct app_context *ctx) {
 
 static config_params_s initialize_config(int argc, char *argv[], char **preferred_device,
                                          char **config_filename) {
+  int cli_headless = -1;
+  int cli_audio = -1;
+  char *cli_log_file = NULL;
+
   for (int i = 1; i < argc; i++) {
     if (SDL_strcmp(argv[i], "--list") == 0) {
       exit(m8_list_devices());
@@ -86,6 +93,15 @@ static config_params_s initialize_config(int argc, char *argv[], char **preferre
       *config_filename = argv[i + 1];
       SDL_Log("Using config file: %s", *config_filename);
       i++;
+    } else if (SDL_strcmp(argv[i], "--headless") == 0 || SDL_strcmp(argv[i], "--daemon") == 0 || SDL_strcmp(argv[i], "-d") == 0) {
+      cli_headless = 1;
+    } else if (SDL_strcmp(argv[i], "--audio") == 0 || SDL_strcmp(argv[i], "-a") == 0) {
+      cli_audio = 1;
+    } else if (SDL_strcmp(argv[i], "--no-audio") == 0) {
+      cli_audio = 0;
+    } else if ((SDL_strcmp(argv[i], "--log") == 0 || SDL_strcmp(argv[i], "-l") == 0) && i + 1 < argc) {
+      cli_log_file = argv[i + 1];
+      i++;
     }
   }
 
@@ -96,6 +112,16 @@ static config_params_s initialize_config(int argc, char *argv[], char **preferre
     conf.init_fullscreen = 1;
   }
   config_read(&conf);
+
+  if (cli_headless != -1) {
+    conf.headless = (unsigned int)cli_headless;
+  }
+  if (cli_audio != -1) {
+    conf.audio_enabled = (unsigned int)cli_audio;
+  }
+  if (cli_log_file != NULL) {
+    conf.log_filename = cli_log_file;
+  }
 
   return conf;
 }
@@ -173,6 +199,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
   ctx->app_state = INITIALIZE;
   ctx->conf = initialize_config(argc, argv, &ctx->preferred_device, &config_filename);
 
+  // Initialize unified AI logger
+  ai_logger_init(ctx->conf.log_filename);
+  if (ctx->conf.headless) {
+    ai_log("SYS", "Starting m8c in Daemon / Headless mode (Virtual Offscreen Display)");
+  }
+
   if (!renderer_initialize(&ctx->conf)) {
     SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Failed to initialize renderer.");
     return SDL_APP_FAILURE;
@@ -198,6 +230,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     ctx->app_state = WAIT_FOR_DEVICE;
   }
 
+  ai_screen_init();
+  ai_server_init();
+
   return SDL_APP_CONTINUE;
 }
 
@@ -205,6 +240,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
   (void)result; // Suppress compiler warning
 
   struct app_context *app = appstate;
+
+  ai_server_shutdown();
+  ai_screen_shutdown();
 
   if (app) {
     if (app->app_state == WAIT_FOR_DEVICE) {
@@ -220,6 +258,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
       m8_close();
     }
     SDL_free(app);
+
+    ai_log("SYS", "m8c application shut down cleanly.");
+    ai_logger_shutdown();
 
     SDL_Log("Shutting down.");
     SDL_Quit();

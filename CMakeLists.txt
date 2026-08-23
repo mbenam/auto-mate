@@ -4,6 +4,8 @@ project(m8c LANGUAGES C VERSION 2.2.4)
 
 set(APP_NAME m8c)
 
+include(FetchContent)
+
 option(USE_LIBSERIALPORT "Use libserialport as a backend" OFF)
 option(USE_LIBUSB "Use libusb as a backend" OFF)
 option(USE_RTMIDI "Use RtMidi as a backend" OFF)
@@ -32,41 +34,121 @@ else ()
     add_executable(${APP_NAME} ${m8c_SRC})
 endif ()
 
-find_package(PkgConfig REQUIRED)
-find_package(SDL3 REQUIRED CONFIG REQUIRED COMPONENTS SDL3)
+find_package(PkgConfig QUIET)
 
-pkg_check_modules(SDL3 REQUIRED sdl3)
+find_package(SDL3 QUIET CONFIG COMPONENTS SDL3)
+if (NOT SDL3_FOUND)
+    if (WIN32 AND MSVC)
+        FetchContent_Declare(
+            SDL3_devel
+            URL "https://github.com/libsdl-org/SDL/releases/download/release-3.4.14/SDL3-devel-3.4.14-VC.zip"
+        )
+        FetchContent_MakeAvailable(SDL3_devel)
+        find_package(SDL3 REQUIRED CONFIG PATHS "${sdl3_devel_SOURCE_DIR}/SDL3-3.4.14" "${sdl3_devel_SOURCE_DIR}")
+    elseif (PKG_CONFIG_FOUND)
+        pkg_check_modules(SDL3 REQUIRED sdl3)
+        target_link_options(${APP_NAME} PRIVATE ${SDL3_LDFLAGS})
+        target_include_directories(${APP_NAME} PRIVATE ${SDL3_INCLUDE_DIRS})
+        target_compile_options(${APP_NAME} PRIVATE ${SDL3_CFLAGS_OTHER})
+        target_link_libraries(${APP_NAME} PRIVATE ${SDL3_LIBRARIES})
+    else ()
+        find_package(SDL3 REQUIRED CONFIG COMPONENTS SDL3)
+    endif ()
+endif ()
 
-target_link_options(${APP_NAME} PRIVATE ${SDL3_LDFLAGS})
-target_include_directories(${APP_NAME} PRIVATE ${SDL3_INCLUDE_DIRS})
-target_compile_options(${APP_NAME} PRIVATE ${SDL3_CFLAGS_OTHER})
+if (TARGET SDL3::SDL3)
+    target_link_libraries(${APP_NAME} PRIVATE SDL3::SDL3)
+elseif (TARGET SDL3::SDL3-shared)
+    target_link_libraries(${APP_NAME} PRIVATE SDL3::SDL3-shared)
+endif ()
 
 if (USE_LIBSERIALPORT)
-    pkg_check_modules(LIBSERIALPORT REQUIRED libserialport)
-    target_link_options(${APP_NAME} PRIVATE ${LIBSERIALPORT_LDFLAGS})
-    target_include_directories(${APP_NAME} PRIVATE ${LIBSERIALPORT_INCLUDE_DIRS})
-    target_compile_options(${APP_NAME} PRIVATE ${LIBSERIALPORT_CFLAGS_OTHER})
+    set(LIBSERIALPORT_FOUND FALSE)
+    if (PKG_CONFIG_FOUND)
+        pkg_check_modules(LIBSERIALPORT libserialport)
+    endif ()
+
+    if (LIBSERIALPORT_FOUND)
+        target_link_options(${APP_NAME} PRIVATE ${LIBSERIALPORT_LDFLAGS})
+        target_include_directories(${APP_NAME} PRIVATE ${LIBSERIALPORT_INCLUDE_DIRS})
+        target_compile_options(${APP_NAME} PRIVATE ${LIBSERIALPORT_CFLAGS_OTHER})
+        target_link_libraries(${APP_NAME} PRIVATE ${LIBSERIALPORT_LIBRARIES})
+    else ()
+        FetchContent_Declare(
+            libserialport
+            GIT_REPOSITORY "https://github.com/sigrokproject/libserialport.git"
+            GIT_TAG "master"
+        )
+        FetchContent_GetProperties(libserialport)
+        if (NOT libserialport_POPULATED)
+            FetchContent_Populate(libserialport)
+            if (WIN32)
+                set(LIBSERIALPORT_SRCS
+                    "${libserialport_SOURCE_DIR}/serialport.c"
+                    "${libserialport_SOURCE_DIR}/timing.c"
+                    "${libserialport_SOURCE_DIR}/windows.c"
+                )
+                add_library(libserialport SHARED ${LIBSERIALPORT_SRCS})
+                target_include_directories(libserialport PUBLIC "${libserialport_SOURCE_DIR}")
+                target_compile_definitions(libserialport PRIVATE LIBSERIALPORT_MSBUILD)
+                target_link_libraries(libserialport PRIVATE setupapi advapi32)
+            endif ()
+        endif ()
+        target_link_libraries(${APP_NAME} PRIVATE libserialport)
+    endif ()
     target_compile_definitions(${APP_NAME} PRIVATE USE_LIBSERIALPORT)
 endif ()
 
 if (USE_LIBUSB)
-    pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
-    target_link_options(${APP_NAME} PRIVATE ${LIBUSB_LDFLAGS})
-    target_include_directories(${APP_NAME} PRIVATE ${LIBUSB_INCLUDE_DIRS})
-    target_compile_options(${APP_NAME} PRIVATE ${LIBUSB_CFLAGS_OTHER})
+    if (PKG_CONFIG_FOUND)
+        pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
+        target_link_options(${APP_NAME} PRIVATE ${LIBUSB_LDFLAGS})
+        target_include_directories(${APP_NAME} PRIVATE ${LIBUSB_INCLUDE_DIRS})
+        target_compile_options(${APP_NAME} PRIVATE ${LIBUSB_CFLAGS_OTHER})
+        target_link_libraries(${APP_NAME} PRIVATE ${LIBUSB_LIBRARIES})
+    endif ()
     target_compile_definitions(${APP_NAME} PRIVATE USE_LIBUSB)
 endif ()
 
 if (USE_RTMIDI)
-    pkg_check_modules(RTMIDI REQUIRED rtmidi)
-    target_link_options(${APP_NAME} PRIVATE ${RTMIDI_LDFLAGS})
-    target_include_directories(${APP_NAME} PRIVATE ${RTMIDI_INCLUDE_DIRS})
-    target_compile_options(${APP_NAME} PRIVATE ${RTMIDI_CFLAGS_OTHER})
+    if (PKG_CONFIG_FOUND)
+        pkg_check_modules(RTMIDI REQUIRED rtmidi)
+        target_link_options(${APP_NAME} PRIVATE ${RTMIDI_LDFLAGS})
+        target_include_directories(${APP_NAME} PRIVATE ${RTMIDI_INCLUDE_DIRS})
+        target_compile_options(${APP_NAME} PRIVATE ${RTMIDI_CFLAGS_OTHER})
+        target_link_libraries(${APP_NAME} PRIVATE ${RTMIDI_LIBRARIES})
+    endif ()
     target_compile_definitions(${APP_NAME} PRIVATE USE_RTMIDI)
 endif ()
 
 if (WIN32)
-    target_link_libraries(${APP_NAME} ${SDL3_LIBRARIES} ${LIBSERIALPORT_LIBRARIES})
+    target_link_libraries(${APP_NAME} PRIVATE ws2_32)
+
+    add_custom_command(TARGET ${APP_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/gamecontrollerdb.txt"
+            "$<TARGET_FILE_DIR:${APP_NAME}>"
+    )
+    if (TARGET SDL3::SDL3-shared)
+        add_custom_command(TARGET ${APP_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:SDL3::SDL3-shared>"
+                "$<TARGET_FILE_DIR:${APP_NAME}>"
+        )
+    elseif (TARGET SDL3::SDL3)
+        add_custom_command(TARGET ${APP_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:SDL3::SDL3>"
+                "$<TARGET_FILE_DIR:${APP_NAME}>"
+        )
+    endif ()
+    if (TARGET libserialport)
+        add_custom_command(TARGET ${APP_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:libserialport>"
+                "$<TARGET_FILE_DIR:${APP_NAME}>"
+        )
+    endif ()
 endif ()
 
 if (APPLE)
@@ -115,3 +197,36 @@ elseif (UNIX)
     install(FILES AUDIOGUIDE.md README.md LICENSE DESTINATION share/doc/${APP_NAME})
     install(FILES gamecontrollerdb.txt DESTINATION bin/)
 endif ()
+
+# Test suite
+enable_testing()
+add_executable(m8c_tests
+    tests/test_ai_server.c
+    src/ai_server.c
+    src/ai_logger.c
+    src/ai_screen.c
+)
+target_include_directories(m8c_tests PRIVATE src)
+if (TARGET SDL3::SDL3)
+    target_link_libraries(m8c_tests PRIVATE SDL3::SDL3)
+elseif (TARGET SDL3::SDL3-shared)
+    target_link_libraries(m8c_tests PRIVATE SDL3::SDL3-shared)
+endif ()
+if (WIN32)
+    target_link_libraries(m8c_tests PRIVATE ws2_32)
+    if (TARGET SDL3::SDL3-shared)
+        add_custom_command(TARGET m8c_tests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:SDL3::SDL3-shared>"
+                "$<TARGET_FILE_DIR:m8c_tests>"
+        )
+    elseif (TARGET SDL3::SDL3)
+        add_custom_command(TARGET m8c_tests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:SDL3::SDL3>"
+                "$<TARGET_FILE_DIR:m8c_tests>"
+        )
+    endif ()
+endif ()
+add_test(NAME m8c_tests COMMAND m8c_tests)
+

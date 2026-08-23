@@ -1,4 +1,5 @@
 #include "events.h"
+#include "ai_server.h"
 #include "backends/m8.h"
 #include "common.h"
 #include "gamepads.h"
@@ -11,6 +12,16 @@
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
   struct app_context *ctx = appstate;
   SDL_AppResult ret_val = SDL_APP_CONTINUE;
+
+  if (event->type == AI_INPUT_EVENT) {
+    ai_server_handle_event(ctx, event);
+    return ret_val;
+  }
+
+  if (event->type == AI_SCREENSHOT_EVENT) {
+    ai_server_handle_screenshot(ctx);
+    return ret_val;
+  }
 
   switch (event->type) {
 

@@ -12,6 +12,7 @@
 
 #include "../command.h"
 #include "../config.h"
+#include "../ai_logger.h"
 #include "m8.h"
 #include "queue.h"
 #include "slip.h"
@@ -44,6 +45,7 @@ static int send_message_to_queue(uint8_t *data, const uint32_t size) {
 }
 
 static int disconnect() {
+  ai_log("PORT", "Disconnecting M8 device");
   SDL_Log("Disconnecting M8");
 
   // wait for the serial processing thread to finish
@@ -268,6 +270,8 @@ int m8_initialize(const int verbose, const char *preferred_device) {
   if (!configure_serial_port(m8_port)) {
     return 0;
   }
+
+  ai_log("PORT", "Connected to M8 device on port %s", sp_get_port_name(m8_port));
 
   // Initialize message queue and threads
   return initialize_serial_thread();

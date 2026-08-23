@@ -32,4 +32,6 @@ int screensaver_init(void);
 void screensaver_draw(void);
 void screensaver_destroy(void);
 
+int renderer_read_pixels_rgb24(void *dst_buffer, int target_width, int target_height);
+
 #endif

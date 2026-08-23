@@ -20,7 +20,7 @@ static SDL_Window *win;
 static SDL_Renderer *rend;
 static SDL_Texture *main_texture;
 static SDL_Texture *hd_texture = NULL;
-static SDL_Color global_background_color = (SDL_Color){.r = 0x00, .g = 0x00, .b = 0x00, .a = 0x00};
+static SDL_Color global_background_color = {0x00, 0x00, 0x00, 0x00};
 static SDL_RendererLogicalPresentation window_scaling_mode = SDL_LOGICAL_PRESENTATION_INTEGER_SCALE;
 static SDL_ScaleMode texture_scaling_mode = SDL_SCALEMODE_NEAREST;
 
@@ -420,9 +420,15 @@ int renderer_initialize(config_params_s *conf) {
     return 0;
   }
 
+  Uint32 window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_OPENGL;
+  if (conf->headless) {
+    window_flags |= SDL_WINDOW_HIDDEN;
+  } else {
+    window_flags |= conf->init_fullscreen;
+  }
+
   if (!SDL_CreateWindowAndRenderer("M8C", texture_width * 2, texture_height * 2,
-                                   SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
-                                       SDL_WINDOW_OPENGL | conf->init_fullscreen,
+                                   window_flags,
                                    &win, &rend)) {
     SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Couldn't create window and renderer: %s",
                     SDL_GetError());
@@ -489,6 +495,16 @@ void render_screen(config_params_s *conf) {
   }
 
   dirty = 0;
+
+  if (conf->headless) {
+    // In headless / daemon mode, main_texture contains all rasterized M8 graphics
+    // for AI screenshot extraction; skip presenting to invisible window.
+    if (!SDL_SetRenderTarget(rend, main_texture)) {
+      SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Couldn't set renderer target to texture: %s",
+                      SDL_GetError());
+    }
+    return;
+  }
 
   if (!SDL_SetRenderTarget(rend, NULL)) {
     SDL_LogCritical(SDL_LOG_CATEGORY_RENDER, "Couldn't set renderer target to window: %s",
@@ -632,3 +648,31 @@ void renderer_clear_screen(void) {
 }
 
 void renderer_request_redraw(void) { dirty = 1; }
+
+int renderer_read_pixels_rgb24(void *dst_buffer, int target_width, int target_height) {
+  if (!rend || !main_texture || !dst_buffer) {
+    return 0;
+  }
+
+  SDL_Texture *prev_target = SDL_GetRenderTarget(rend);
+  if (!SDL_SetRenderTarget(rend, main_texture)) {
+    SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Failed to set render target to main_texture: %s", SDL_GetError());
+    return 0;
+  }
+
+  SDL_Surface *surface = SDL_RenderReadPixels(rend, NULL);
+  SDL_SetRenderTarget(rend, prev_target);
+
+  if (!surface) {
+    SDL_LogError(SDL_LOG_CATEGORY_RENDER, "SDL_RenderReadPixels failed: %s", SDL_GetError());
+    return 0;
+  }
+
+  bool ok = SDL_ConvertPixels(surface->w, surface->h, surface->format,
+                              surface->pixels, surface->pitch,
+                              SDL_PIXELFORMAT_RGB24,
+                              dst_buffer, target_width * 3);
+
+  SDL_DestroySurface(surface);
+  return ok ? 1 : 0;
+}

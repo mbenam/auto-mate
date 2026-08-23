@@ -2,6 +2,8 @@
 // Released under the MIT licence, https://opensource.org/licenses/MIT
 #ifndef USE_LIBUSB
 #include "audio.h"
+#include "../ai_server.h"
+#include "../ai_logger.h"
 #include <SDL3/SDL.h>
 
 SDL_AudioStream *audio_stream_in, *audio_stream_out;
@@ -69,6 +71,10 @@ static void SDLCALL audio_cb_out(void *userdata, SDL_AudioStream *stream, int ad
       return;
     }
 
+    if (ai_is_recording && ai_wav_file != NULL) {
+      ai_server_record_audio(temp, got);
+    }
+
     to_write -= got;
   }
 }
@@ -113,13 +119,15 @@ int audio_initialize(const char *output_device_name, const unsigned int audio_bu
     return 0;
   }
 
-  SDL_LogDebug(SDL_LOG_CATEGORY_AUDIO, "Audio input devices:");
+  ai_log("AUDIO", "Enumerating %d audio input devices...", num_devices_in);
   for (int i = 0; i < num_devices_in; i++) {
     const SDL_AudioDeviceID instance_id = devices_in[i];
     const char *device_name = SDL_GetAudioDeviceName(instance_id);
-    SDL_LogDebug(SDL_LOG_CATEGORY_AUDIO, "%s", device_name);
-    if (SDL_strstr(device_name, "M8") != NULL) {
-      SDL_LogInfo(SDL_LOG_CATEGORY_AUDIO, "M8 Audio Input device found: %s", device_name);
+    ai_log("AUDIO", "  [Input %d]: '%s'", i, device_name ? device_name : "(null)");
+    if (device_name && (SDL_strstr(device_name, "M8") != NULL ||
+                        SDL_strstr(device_name, "Teensy") != NULL ||
+                        SDL_strstr(device_name, "m8") != NULL)) {
+      ai_log("AUDIO", "Selected M8/Teensy Audio Device: '%s'", device_name);
       m8_device_id = instance_id;
     }
   }
@@ -129,8 +137,8 @@ int audio_initialize(const char *output_device_name, const unsigned int audio_bu
       const SDL_AudioDeviceID instance_id = devices_out[i];
       const char *device_name = SDL_GetAudioDeviceName(instance_id);
       SDL_LogDebug(SDL_LOG_CATEGORY_AUDIO, "%s", device_name);
-      if (SDL_strcasestr(device_name, output_device_name) != NULL) {
-        SDL_Log("Requested output device found: %s", device_name);
+      if (device_name && SDL_strcasestr(device_name, output_device_name) != NULL) {
+        ai_log("AUDIO", "Requested output device found: %s", device_name);
         output_device_id = instance_id;
       }
     }
@@ -144,7 +152,7 @@ int audio_initialize(const char *output_device_name, const unsigned int audio_bu
   }
 
   if (!m8_device_id) {
-    // forget about it
+    ai_log("AUDIO", "Warning: No M8/Teensy USB audio input device detected");
     SDL_Log("Cannot find M8 audio input device");
     return 0;
   }

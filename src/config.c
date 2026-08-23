@@ -34,19 +34,22 @@ config_params_s config_initialize(char *filename) {
   c.audio_enabled = 0;   // route M8 audio to default output
   c.audio_buffer_size = 0;    // requested audio buffer size in samples: 0 = let SDL decide
   c.audio_device_name = NULL; // Use this device, leave NULL to use the default output device
+  c.headless = 0;        // default to normal GUI window
+  c.log_filename = NULL; // default to stdout/memory only
+  c.log_level = 0;
 
   c.key_up = SDL_SCANCODE_UP;
   c.key_left = SDL_SCANCODE_LEFT;
   c.key_down = SDL_SCANCODE_DOWN;
   c.key_right = SDL_SCANCODE_RIGHT;
   c.key_select = SDL_SCANCODE_LSHIFT;
-  c.key_select_alt = SDL_SCANCODE_Z;
+  c.key_select_alt = SDL_SCANCODE_A;
   c.key_start = SDL_SCANCODE_SPACE;
-  c.key_start_alt = SDL_SCANCODE_X;
+  c.key_start_alt = SDL_SCANCODE_S;
   c.key_opt = SDL_SCANCODE_LALT;
-  c.key_opt_alt = SDL_SCANCODE_A;
+  c.key_opt_alt = SDL_SCANCODE_Z;
   c.key_edit = SDL_SCANCODE_LCTRL;
-  c.key_edit_alt = SDL_SCANCODE_S;
+  c.key_edit_alt = SDL_SCANCODE_X;
   c.key_delete = SDL_SCANCODE_DELETE;
   c.key_reset = SDL_SCANCODE_R;
   c.key_jazz_inc_octave = SDL_SCANCODE_KP_MULTIPLY;
@@ -202,6 +205,16 @@ void config_read(config_params_s *conf) {
   read_graphics_config(ini, conf);
   read_key_config(ini, conf);
   read_gamepad_config(ini, conf);
+
+  // Read [system] section for headless & logging
+  const char *param_headless = ini_get(ini, "system", "headless");
+  if (param_headless != NULL && strcmpci(param_headless, "true") == 0) {
+    conf->headless = 1;
+  }
+  const char *param_log = ini_get(ini, "system", "log_file");
+  if (param_log != NULL && strlen(param_log) > 0 && conf->log_filename == NULL) {
+    conf->log_filename = SDL_strdup(param_log);
+  }
 
   // Frees the mem used for the config
   ini_free(ini);
