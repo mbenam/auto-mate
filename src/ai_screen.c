@@ -478,27 +478,27 @@ static void snap_cursor_to_token(int row, int *col, int *width) {
       *col = 10;
       *width = 2;
       return;
-    } else if (c >= 12 && c <= 15) {
+    } else if (c >= 12 && c <= 14) {
       *col = 13;
       *width = 3;
       return;
-    } else if (c >= 16 && c <= 17) {
+    } else if (c >= 15 && c <= 17) {
       *col = 16;
       *width = 2;
       return;
-    } else if (c >= 18 && c <= 21) {
+    } else if (c >= 18 && c <= 20) {
       *col = 19;
       *width = 3;
       return;
-    } else if (c >= 22 && c <= 23) {
+    } else if (c >= 21 && c <= 23) {
       *col = 22;
       *width = 2;
       return;
-    } else if (c >= 24 && c <= 27) {
+    } else if (c >= 24 && c <= 26) {
       *col = 25;
       *width = 3;
       return;
-    } else if (c >= 28 && c <= 30) {
+    } else if (c >= 27 && c <= 30) {
       *col = 28;
       *width = 2;
       return;
@@ -704,27 +704,27 @@ static void analyze_screen_state(void) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
                  "INSTRUMENT_%s", step_hex);
         matched = 1;
-      } else if (col >= 12 && col <= 15) {
+      } else if (col >= 12 && col <= 14) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
                  "FX1_%s", step_hex);
         matched = 1;
-      } else if (col >= 16 && col <= 17) {
+      } else if (col >= 15 && col <= 17) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
                  "FX1_VAL_%s", step_hex);
         matched = 1;
-      } else if (col >= 18 && col <= 21) {
+      } else if (col >= 18 && col <= 20) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
                  "FX2_%s", step_hex);
         matched = 1;
-      } else if (col >= 22 && col <= 23) {
+      } else if (col >= 21 && col <= 23) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
                  "FX2_VAL_%s", step_hex);
         matched = 1;
-      } else if (col >= 24 && col <= 27) {
+      } else if (col >= 24 && col <= 26) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
                  "FX3_%s", step_hex);
         matched = 1;
-      } else if (col >= 28 && col <= 31) {
+      } else if (col >= 27 && col <= 31) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
                  "FX3_VAL_%s", step_hex);
         matched = 1;
