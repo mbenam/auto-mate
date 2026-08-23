@@ -321,6 +321,37 @@ static const m8_static_field_map_s g_field_map[] = {
     {"KEYBOARD", 8, 22, 0, 39, "KEY_CHAR"},
 };
 
+static void snap_cursor_to_token(int row, int *col, int *width) {
+  if (row < 0 || row >= M8_SCREEN_ROWS || !col || !width) return;
+  const char *line = g_screen_state.text[row];
+  int len = (int)strlen(line);
+  int c = *col;
+  if (c < 0 || c >= len) return;
+
+  // If pointing at a space, inspect adjacent characters to find the intended token
+  if (line[c] == ' ') {
+    if (c + 1 < len && line[c + 1] != ' ') {
+      c = c + 1;
+    } else if (c - 1 >= 0 && line[c - 1] != ' ') {
+      c = c - 1;
+    } else {
+      return;
+    }
+  }
+
+  int start = c;
+  int end = c;
+
+  while (start > 0 && line[start - 1] != ' ') start--;
+  while (end < len && line[end] != ' ') end++;
+
+  int token_len = end - start;
+  if (token_len > 0) {
+    *col = start;
+    *width = token_len;
+  }
+}
+
 static void analyze_screen_state(void) {
   // 1. Identify Screen from rows 0 to 4
   char header_raw[M8_SCREEN_COLS + 1] = {0};
@@ -390,11 +421,16 @@ static void analyze_screen_state(void) {
     }
   }
 
-  // 2. Resolve Active Input & Value
+  // 2. Resolve Active Input & Value with Token Snapping
   int col = g_screen_state.cursor_col;
   int row = g_screen_state.cursor_row;
+  int width = g_screen_state.cursor_width;
 
   if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
+    snap_cursor_to_token(row, &col, &width);
+    g_screen_state.cursor_col = col;
+    g_screen_state.cursor_width = width;
+
     extract_token_at(g_screen_state.text[row], col, g_screen_state.current_value,
                      sizeof(g_screen_state.current_value));
 
