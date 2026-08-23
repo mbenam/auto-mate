@@ -95,8 +95,24 @@ void ai_screen_on_draw_char(int c, int px_x, int px_y,
   g_screen_state.bg_g[row][col] = bg_g;
   g_screen_state.bg_b[row][col] = bg_b;
 
+  // Inverted selection highlight detection (e.g. in file browser / name picker modals)
+  if ((bg_r > 50 || bg_g > 50 || bg_b > 50) && px_x < 240) {
+    if (row >= 0 && row < M8_SCREEN_ROWS && col >= 0 && col < M8_SCREEN_COLS) {
+      g_screen_state.cursor_col = col;
+      g_screen_state.cursor_row = row;
+      g_screen_state.cursor_width = 1;
+    }
+  }
+
   if (screen_mutex) SDL_UnlockMutex(screen_mutex);
 }
+
+// Internal state to aggregate cursor corner brackets (TL, TR, BL, BR)
+static int g_cur_min_x = -1;
+static int g_cur_min_y = -1;
+static int g_cur_max_x = -1;
+static int g_cur_max_y = -1;
+static Uint64 g_last_corner_tick = 0;
 
 void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h,
                             uint8_t r, uint8_t g, uint8_t b) {
@@ -114,21 +130,58 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h,
       memset(g_screen_state.text[row], ' ', M8_SCREEN_COLS);
       g_screen_state.text[row][M8_SCREEN_COLS] = '\0';
     }
-  } else if (w > 0 && h > 0 && (w < 300 || h < 220)) {
-    // Check if this rectangle represents a cursor or selection highlight
-    // M8 cursors are typically 1-4 characters wide (8-32 px) and 1 row high (8-10 px)
-    // or inverted rectangular highlights
-    int col = px_x / 8;
-    int row = px_y / 8;
-    int cols_wide = (w + 7) / 8;
-    int rows_high = (h + 7) / 8;
+    g_cur_min_x = -1;
+    g_cur_min_y = -1;
+    g_cur_max_x = -1;
+    g_cur_max_y = -1;
+  } else if (w > 0 && h > 0 && px_x < 240) {
+    Uint64 now = SDL_GetTicks();
 
-    if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
-      if (rows_high <= 2 && cols_wide <= 16) {
+    // 1. Check for small corner brackets of the M8 cursor (e.g. w <= 4, h <= 4)
+    if (w <= 4 && h <= 4) {
+      // If close to active corner cluster and within 100ms, aggregate
+      if (g_cur_min_x >= 0 && (now - g_last_corner_tick < 100) &&
+          abs(px_x - g_cur_min_x) <= 32 && abs(px_y - g_cur_min_y) <= 16) {
+        if (px_x < g_cur_min_x) g_cur_min_x = px_x;
+        if (px_y < g_cur_min_y) g_cur_min_y = px_y;
+        if (px_x + w > g_cur_max_x) g_cur_max_x = px_x + w;
+        if (px_y + h > g_cur_max_y) g_cur_max_y = px_y + h;
+      } else {
+        // Start a new corner cluster
+        g_cur_min_x = px_x;
+        g_cur_min_y = px_y;
+        g_cur_max_x = px_x + w;
+        g_cur_max_y = px_y + h;
+      }
+      g_last_corner_tick = now;
+
+      // The true cursor position is always at the top-left minimum (min_x, min_y)
+      int col = g_cur_min_x / 8;
+      int row = g_cur_min_y / 8;
+      int cols_wide = (g_cur_max_x - g_cur_min_x + 7) / 8;
+      if (cols_wide < 1) cols_wide = 1;
+      if (cols_wide > 16) cols_wide = 16;
+
+      if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
         g_screen_state.cursor_col = col;
         g_screen_state.cursor_row = row;
-        g_screen_state.cursor_width = cols_wide > 0 ? cols_wide : 1;
-        g_screen_state.cursor_height = rows_high > 0 ? rows_high : 1;
+        g_screen_state.cursor_width = cols_wide;
+        g_screen_state.cursor_height = 1;
+      }
+    }
+    // 2. Check for solid block selection highlights (e.g. in menus / project view)
+    else if (w >= 6 && h >= 6 && w <= 200 && h <= 16) {
+      int col = px_x / 8;
+      int row = px_y / 8;
+      int cols_wide = (w + 7) / 8;
+      if (cols_wide < 1) cols_wide = 1;
+      if (cols_wide > 16) cols_wide = 16;
+
+      if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
+        g_screen_state.cursor_col = col;
+        g_screen_state.cursor_row = row;
+        g_screen_state.cursor_width = cols_wide;
+        g_screen_state.cursor_height = 1;
       }
     }
   }

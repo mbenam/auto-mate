@@ -23,6 +23,7 @@ class M8StateMonitorApp:
         self.poll_interval_ms = 500  # Poll every half a second
         self.is_connected = False
         self.sock = None
+        self.buf = bytearray()
         self.sock_lock = threading.Lock()
         self.poll_active = False
 
@@ -333,19 +334,22 @@ class M8StateMonitorApp:
                     cmd_str += "\n"
                 self.sock.sendall(cmd_str.encode("utf-8"))
                 
-                # Read line response
-                buf = bytearray()
-                while b"\n" not in buf:
-                    chunk = self.sock.recv(4096)
-                    if not chunk:
-                        break
-                    buf.extend(chunk)
-                if b"\n" in buf:
-                    idx = buf.index(b"\n")
-                    return buf[:idx].decode("utf-8", errors="replace").strip()
-                return buf.decode("utf-8", errors="replace").strip()
+                # Read line response using persistent buffer helper
+                line = self._recv_line_locked()
+                return line
             except Exception:
                 return None
+
+    def _recv_line_locked(self):
+        while b"\n" not in self.buf:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                return None
+            self.buf.extend(chunk)
+        idx = self.buf.index(b"\n")
+        line = self.buf[:idx].decode("utf-8", errors="replace").strip("\r\n")
+        del self.buf[:idx + 1]
+        return line
 
     def _schedule_poll(self):
         if not self.poll_active or not self.is_connected:
@@ -355,53 +359,40 @@ class M8StateMonitorApp:
         self.root.after(self.poll_interval_ms, self._schedule_poll)
 
     def _async_query_state(self):
-        # 1. Fetch GET_STATE
-        state_resp = self._send_cmd_locked("GET_STATE")
-        if not state_resp:
-            self.root.after(0, self.disconnect)
-            return
-
-        state_data = {}
-        if state_resp.startswith("OK STATE "):
-            try:
-                state_data = json.loads(state_resp[9:])
-            except Exception:
-                pass
-
-        # 2. Fetch GET_TEXT_SCREEN MARKED
-        screen_lines = []
         with self.sock_lock:
-            if self.sock:
-                try:
-                    self.sock.sendall(b"GET_TEXT_SCREEN MARKED\n")
-                    buf = bytearray()
-                    # Read header line
-                    while b"\n" not in buf:
-                        chunk = self.sock.recv(4096)
-                        if not chunk:
-                            break
-                        buf.extend(chunk)
-                    if b"\n" in buf:
-                        idx = buf.index(b"\n")
-                        hdr = buf[:idx].decode("utf-8", errors="replace").strip()
-                        del buf[:idx + 1]
-                        if "OK TEXT_SCREEN" in hdr:
-                            for _ in range(30):
-                                while b"\n" not in buf:
-                                    chunk = self.sock.recv(4096)
-                                    if not chunk:
-                                        break
-                                    buf.extend(chunk)
-                                if b"\n" in buf:
-                                    l_idx = buf.index(b"\n")
-                                    line_str = buf[:l_idx].decode("utf-8", errors="replace").strip("\r")
-                                    del buf[:l_idx + 1]
-                                    screen_lines.append(line_str)
-                except Exception:
-                    pass
+            if not self.sock:
+                self.root.after(0, self.disconnect)
+                return
 
-        # Update GUI on main thread
-        self.root.after(0, lambda s=state_data, lines=screen_lines: self._update_ui_state(s, lines))
+            try:
+                # 1. Fetch GET_STATE
+                self.sock.sendall(b"GET_STATE\n")
+                state_resp = self._recv_line_locked()
+                if not state_resp:
+                    self.root.after(0, self.disconnect)
+                    return
+
+                state_data = {}
+                if state_resp.startswith("OK STATE "):
+                    try:
+                        state_data = json.loads(state_resp[9:])
+                    except Exception:
+                        pass
+
+                # 2. Fetch GET_TEXT_SCREEN MARKED
+                self.sock.sendall(b"GET_TEXT_SCREEN MARKED\n")
+                hdr = self._recv_line_locked()
+                screen_lines = []
+                if hdr and "OK TEXT_SCREEN" in hdr:
+                    for _ in range(30):
+                        line_str = self._recv_line_locked()
+                        if line_str is not None:
+                            screen_lines.append(line_str)
+
+                # Update GUI on main thread
+                self.root.after(0, lambda s=state_data, lines=screen_lines: self._update_ui_state(s, lines))
+            except Exception:
+                self.root.after(0, self.disconnect)
 
     def _update_ui_state(self, state, screen_lines):
         self.current_state = state
@@ -435,21 +426,28 @@ class M8StateMonitorApp:
         self.txt_json.insert(tk.END, json.dumps(state, indent=2))
         self.txt_json.config(state=tk.DISABLED)
 
-        # Update Virtual Screen Grid
+        # Update Virtual Screen Grid with precise bracket token highlighting
         if screen_lines:
             self.txt_screen.config(state=tk.NORMAL)
             self.txt_screen.delete("1.0", tk.END)
             for idx, line in enumerate(screen_lines):
-                # Apply syntax coloring tags
-                tag = "normal"
                 if idx == 0:
-                    tag = "header"
+                    self.txt_screen.insert(tk.END, line + "\n", "header")
                 elif "[" in line and "]" in line:
-                    tag = "cursor"
+                    p1 = line.index("[")
+                    p2 = line.index("]")
+                    pre = line[:p1]
+                    mid = line[p1:p2+1]
+                    post = line[p2+1:]
+                    
+                    self.txt_screen.insert(tk.END, pre, "normal")
+                    self.txt_screen.insert(tk.END, mid, "cursor")
+                    self.txt_screen.insert(tk.END, post + "\n", "normal")
                 elif "--" in line and not line.strip().replace("-", "").isalnum():
-                    tag = "muted"
-                
-                self.txt_screen.insert(tk.END, line + "\n", tag)
+                    self.txt_screen.insert(tk.END, line + "\n", "muted")
+                else:
+                    self.txt_screen.insert(tk.END, line + "\n", "normal")
+
             self.txt_screen.config(state=tk.DISABLED)
 
     def send_key(self, combo):
