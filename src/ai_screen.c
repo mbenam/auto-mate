@@ -161,8 +161,15 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t
 
       // An authentic M8 cursor bracket has multiple corner segments and spans at least 10x7 pixels
       if (g_cur_corner_count >= 3 && (g_cur_max_x - g_cur_min_x) >= 10 && (g_cur_max_y - g_cur_min_y) >= 7) {
-        int col = (g_cur_min_x + 4) / 8;
-        int row = (g_cur_min_y + g_cur_max_y) / 16;
+        int col = (g_cur_min_x + 2) / 8;
+        int row = (g_cur_min_y + 2) / 8;
+
+        // Correct for M8 16-pixel hardware bar gap rows (9, 14, 19, 24)
+        if (row == 9) row = 8;
+        else if (row == 14) row = 13;
+        else if (row == 19) row = 18;
+        else if (row == 24) row = 23;
+
         int cols_wide = (g_cur_max_x - g_cur_min_x + 7) / 8;
         if (cols_wide < 1) cols_wide = 1;
         if (cols_wide > 20) cols_wide = 20;
