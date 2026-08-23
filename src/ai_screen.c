@@ -493,7 +493,7 @@ static void analyze_screen_state(void) {
 
   if (is_keyboard) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "KEYBOARD");
-  } else if (strncmp(header_raw, "SONG", 4) == 0) {
+  } else if (strncmp(header_raw, "SONG", 4) == 0 || strstr(header_raw, "LIVE") != NULL) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "SONG");
   } else if (strncmp(header_raw, "CHAIN", 5) == 0) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "CHAIN");
@@ -545,18 +545,56 @@ static void analyze_screen_state(void) {
     extract_token_at(g_screen_state.text[row], col, width, g_screen_state.current_value,
                      sizeof(g_screen_state.current_value));
 
-    // Try static UI map first
     int matched = 0;
-    int map_count = sizeof(g_field_map) / sizeof(g_field_map[0]);
-    for (int i = 0; i < map_count; i++) {
-      if (strncmp(g_screen_state.active_screen, g_field_map[i].screen_prefix,
-                  strlen(g_field_map[i].screen_prefix)) == 0) {
-        if (row >= g_field_map[i].min_row && row <= g_field_map[i].max_row &&
-            col >= g_field_map[i].min_col && col <= g_field_map[i].max_col) {
-          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "%s",
-                   g_field_map[i].input_id);
-          matched = 1;
-          break;
+
+    // Special Dynamic Screen Matrix: SONG (Tracks 1..8 x Song Chains)
+    if (strcmp(g_screen_state.active_screen, "SONG") == 0 && row >= 3 && row <= 28) {
+      const char *line = g_screen_state.text[row];
+      char row_hex[4] = "00";
+      int p = 0;
+      while (line[p] == ' ' && p < 4) p++;
+      if (isxdigit((unsigned char)line[p]) && isxdigit((unsigned char)line[p + 1])) {
+        row_hex[0] = (char)toupper((unsigned char)line[p]);
+        row_hex[1] = (char)toupper((unsigned char)line[p + 1]);
+        row_hex[2] = '\0';
+      } else {
+        snprintf(row_hex, sizeof(row_hex), "%02X", row >= 7 ? row - 7 : row);
+      }
+
+      int track_num = 0;
+      if (col >= 3 && col <= 5) track_num = 1;
+      else if (col >= 6 && col <= 8) track_num = 2;
+      else if (col >= 9 && col <= 11) track_num = 3;
+      else if (col >= 12 && col <= 14) track_num = 4;
+      else if (col >= 15 && col <= 17) track_num = 5;
+      else if (col >= 18 && col <= 20) track_num = 6;
+      else if (col >= 21 && col <= 23) track_num = 7;
+      else if (col >= 24 && col <= 27) track_num = 8;
+
+      if (track_num >= 1 && track_num <= 8) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "TRACK%d_CHAIN_%s", track_num, row_hex);
+        matched = 1;
+      } else if (col <= 2) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "ROW_%s", row_hex);
+        matched = 1;
+      }
+    }
+
+    // Try static UI map if not already matched
+    if (!matched) {
+      int map_count = sizeof(g_field_map) / sizeof(g_field_map[0]);
+      for (int i = 0; i < map_count; i++) {
+        if (strncmp(g_screen_state.active_screen, g_field_map[i].screen_prefix,
+                    strlen(g_field_map[i].screen_prefix)) == 0) {
+          if (row >= g_field_map[i].min_row && row <= g_field_map[i].max_row &&
+              col >= g_field_map[i].min_col && col <= g_field_map[i].max_col) {
+            snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "%s",
+                     g_field_map[i].input_id);
+            matched = 1;
+            break;
+          }
         }
       }
     }
