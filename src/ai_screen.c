@@ -581,6 +581,40 @@ static void analyze_screen_state(void) {
         matched = 1;
       }
     }
+    // Special Dynamic Screen Matrix: CHAIN (Steps 00..0F: Phrase & Transpose)
+    else if (strcmp(g_screen_state.active_screen, "CHAIN") == 0 && row >= 3 && row <= 28) {
+      const char *line = g_screen_state.text[row];
+      char step_hex[4] = "00";
+      int p = 0;
+      while (line[p] == ' ' && p < 3) p++;
+      if (isxdigit((unsigned char)line[p])) {
+        if (isxdigit((unsigned char)line[p + 1])) {
+          step_hex[0] = (char)toupper((unsigned char)line[p]);
+          step_hex[1] = (char)toupper((unsigned char)line[p + 1]);
+          step_hex[2] = '\0';
+        } else {
+          step_hex[0] = '0';
+          step_hex[1] = (char)toupper((unsigned char)line[p]);
+          step_hex[2] = '\0';
+        }
+      } else {
+        snprintf(step_hex, sizeof(step_hex), "%02X", row >= 7 ? row - 7 : row);
+      }
+
+      if (col >= 2 && col <= 4) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "PHRASE_%s", step_hex);
+        matched = 1;
+      } else if (col >= 5 && col <= 8) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "TRANSPOSE_%s", step_hex);
+        matched = 1;
+      } else if (col <= 1) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "STEP_%s", step_hex);
+        matched = 1;
+      }
+    }
 
     // Try static UI map if not already matched
     if (!matched) {
