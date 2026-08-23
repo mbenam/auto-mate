@@ -339,3 +339,20 @@ Some distributions have also had conflicts with the kernel version and libserial
     - Check that audio routing is enabled (F12)
     - Verify audio device selection in config
     - On macOS, ensure microphone permission is granted
+
+-------
+
+## AI Automation & Headless Daemon API
+
+m8c includes a built-in multi-threaded TCP automation server on port `9123` for AI agents, computer vision, and automated composition workflows.
+
+### Features
+- **Headless / Daemon Mode (`--headless` / `-d`)**: Runs headlessly in the background without creating a desktop window.
+- **Virtual Screen & State Tracking**: Real-time $40 \times 30$ text matrix and JSON screen inspector via `GET_STATE` / `GET_TEXT_SCREEN`.
+- **Thread-Safe Screenshots**: Pull raw 320x240 RGB24 frames over TCP via `SCREENSHOT`.
+- **Direct USB Audio Recording**: Capture live 44.1kHz 16-bit stereo WAV files to disk via `REC_START` / `REC_STOP`.
+- **Keystroke Simulation**: Single and multi-key pulse, hold, and release commands (`KEY`, `KEY_DOWN`, `KEY_UP`).
+
+For detailed documentation, protocol specifications, and extensive Python code examples, see:
+👉 **[AI Automation & Developer Guide](docs/AI_AUTOMATION_GUIDE.md)**
+
