@@ -317,6 +317,37 @@ static const m8_static_field_map_s g_field_map[] = {
     {"PROJECT", 23, 23, 12, 30, "TIME_STATS"},
     {"PROJECT", 25, 25, 12, 30, "SYSTEM_SETTINGS"},
 
+    // MIXER Screen
+    {"MIXER", 5, 6, 12, 17, "OUTPUT_VOL"},
+    // Track Volume Faders (Row 15)
+    {"MIXER", 14, 15, 0, 2, "TRACK1_VOL"},
+    {"MIXER", 14, 15, 3, 5, "TRACK2_VOL"},
+    {"MIXER", 14, 15, 6, 8, "TRACK3_VOL"},
+    {"MIXER", 14, 15, 9, 11, "TRACK4_VOL"},
+    {"MIXER", 14, 15, 12, 14, "TRACK5_VOL"},
+    {"MIXER", 14, 15, 15, 17, "TRACK6_VOL"},
+    {"MIXER", 14, 15, 18, 20, "TRACK7_VOL"},
+    {"MIXER", 14, 15, 21, 24, "TRACK8_VOL"},
+    // Returns & Inputs & Master FX (Rows 20..26)
+    {"MIXER", 20, 20, 26, 31, "EQ"},
+    {"MIXER", 21, 21, 0, 2, "CHO_RETURN"},
+    {"MIXER", 21, 21, 3, 5, "DEL_RETURN"},
+    {"MIXER", 21, 21, 6, 8, "REV_RETURN"},
+    {"MIXER", 21, 21, 12, 14, "INPUT_VOL"},
+    {"MIXER", 21, 21, 15, 17, "INPUT_PAN"},
+    {"MIXER", 21, 21, 18, 21, "INPUT_LIMIT"},
+    {"MIXER", 21, 21, 26, 31, "MIX_DC"},
+    {"MIXER", 22, 22, 18, 24, "INPUT_SOURCE"},
+    {"MIXER", 22, 22, 26, 31, "LIMITER"},
+    {"MIXER", 23, 23, 12, 16, "INPUT_CHORUS"},
+    {"MIXER", 23, 23, 18, 22, "USB_CHORUS"},
+    {"MIXER", 23, 23, 26, 31, "DJ_FILTER"},
+    {"MIXER", 25, 25, 12, 16, "INPUT_DELAY"},
+    {"MIXER", 25, 25, 18, 22, "USB_DELAY"},
+    {"MIXER", 25, 25, 26, 31, "OTT"},
+    {"MIXER", 26, 26, 12, 16, "INPUT_REVERB"},
+    {"MIXER", 26, 26, 18, 22, "USB_REVERB"},
+
     // TABLE Screen (Steps 00..0F on rows 3..18)
     {"TABLE", 3, 18, 0, 1, "STEP"},
     {"TABLE", 3, 18, 2, 5, "NOTE"},
