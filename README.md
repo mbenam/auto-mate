@@ -348,11 +348,14 @@ m8c includes a built-in multi-threaded TCP automation server on port `9123` for 
 
 ### Features
 - **Headless / Daemon Mode (`--headless` / `-d`)**: Runs headlessly in the background without creating a desktop window.
-- **Virtual Screen & State Tracking**: Real-time $40 \times 30$ text matrix and JSON screen inspector via `GET_STATE` / `GET_TEXT_SCREEN`.
+- **Virtual Screen & State Tracking**: Real-time $40 \times 30$ text matrix and JSON screen inspector via `GET_STATE` / `GET_TEXT_SCREEN` with comprehensive field mappings across all M8 screens (`SONG`, `CHAIN`, `PHRASE`, `PROJECT`, `MIXER`, `EQ`, `TABLE`, `GROOVE`, synth and effect pages).
 - **Thread-Safe Screenshots**: Pull raw 320x240 RGB24 frames over TCP via `SCREENSHOT`.
 - **Direct USB Audio Recording**: Capture live 44.1kHz 16-bit stereo WAV files to disk via `REC_START` / `REC_STOP`.
-- **Keystroke Simulation**: Single and multi-key pulse, hold, and release commands (`KEY`, `KEY_DOWN`, `KEY_UP`).
+- **Keystroke Simulation**: Single and multi-key pulse, hold, and release commands (`KEY`, `KEY_PRESS`, `KEY_DOWN`, `KEY_UP`).
+- **Real-Time State Monitor GUI**: Interactive Tkinter inspector tool (`tools/m8_state_monitor.py`) for live screen rendering and remote control.
 
-For detailed documentation, protocol specifications, and extensive Python code examples, see:
+For detailed documentation, protocol specifications, screen mappings, and extensive Python code examples, see:
 👉 **[AI Automation & Developer Guide](docs/AI_AUTOMATION_GUIDE.md)**
+👉 **[Developer & Automation Tools Guide](tools/README.md)**
+
 

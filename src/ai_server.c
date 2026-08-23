@@ -583,6 +583,9 @@ static int SDLCALL ai_server_thread_fn(void *data) {
       continue;
     }
 
+    int nodelay = 1;
+    setsockopt(client_sock, IPPROTO_TCP, TCP_NODELAY, (const char *)&nodelay, sizeof(nodelay));
+
     handle_client(client_sock);
   }
 

@@ -14,14 +14,16 @@ Welcome to the **M8C AI Automation & Developer Guide**. This document provides a
    - [Detailed Command Specifications](#detailed-command-specifications)
 4. [Virtual Screen & State Tracking](#4-virtual-screen--state-tracking)
    - [Grid Layout & Coordinates](#grid-layout--coordinates)
-   - [Screen Identification Heuristics](#screen-identification-heuristics)
+   - [Screen Identification & Alignment Heuristics](#screen-identification--alignment-heuristics)
+   - [Screen & Input Field Mappings Reference](#screen--input-field-mappings-reference)
    - [State JSON Schema](#state-json-schema)
 5. [Keyboard & Key Combo Simulation](#5-keyboard--key-combo-simulation)
    - [Key Bitmasks & Names](#key-bitmasks--names)
    - [Press, Hold, and Release Mechanisms](#press-hold-and-release-mechanisms)
 6. [Screenshots & Computer Vision Pipeline](#6-screenshots--computer-vision-pipeline)
 7. [Direct Audio to WAV Recording](#7-direct-audio-to-wav-recording)
-8. [Extensive Python Code Examples](#8-extensive-python-code-examples)
+8. [Real-Time State Monitor GUI Tool](#8-real-time-state-monitor-gui-tool)
+9. [Extensive Python Code Examples](#9-extensive-python-code-examples)
    - [Example 1: Core `M8Client` Wrapper Class](#example-1-core-m8client-wrapper-class)
    - [Example 2: Text Screen & JSON State Monitor](#example-2-text-screen--json-state-monitor)
    - [Example 3: Autonomous Beat & Note Programming](#example-3-autonomous-beat--note-programming)
@@ -29,7 +31,7 @@ Welcome to the **M8C AI Automation & Developer Guide**. This document provides a
    - [Example 5: Computer Vision & Screenshot Processing](#example-5-computer-vision--screenshot-processing)
    - [Example 6: Direct WAV Recording & Waveform Verification](#example-6-direct-wav-recording--waveform-verification)
    - [Example 7: Project Creation & SD Card Save Automation](#example-7-project-creation--sd-card-save-automation)
-9. [Troubleshooting & Best Practices](#9-troubleshooting--best-practices)
+10. [Troubleshooting & Best Practices](#10-troubleshooting--best-practices)
 
 ---
 
@@ -144,11 +146,12 @@ Returns a compact single-line JSON object representing the entire screen state:
   "screen": "PHRASE",
   "cursor_col": 3,
   "cursor_row": 4,
-  "input": "NOTE",
+  "cursor_width": 3,
+  "input": "NOTE_00",
   "value": "C-4",
   "header": "PHRASE 00",
   "play_state": "PLAYING",
-  "cursor_text_line": "0 C-4 80 00 ---00 ---00 ---00"
+  "cursor_text_line": "00 [C-4] FF 01 VOL 80 --- -- --- --"
 }
 ```
 
@@ -177,11 +180,52 @@ The M8 screen displays text on a $40 \text{ column} \times 30 \text{ row}$ chara
 - **Columns**: $0 \le x < 40$ ($x=0$ is leftmost column).
 - **Rows**: $0 \le y < 30$ ($y=0$ is topmost header line).
 
-### Screen Identification Heuristics
-The virtual screen parser identifies the active view dynamically:
-1. **Header Matching**: Matches screen titles (`SONG`, `CHAIN`, `PHRASE`, `MIXER`, `TABLE`, `GROOVE`, `SCALE`, `PROJECT`, `SYSTEM`).
+### Screen Identification & Alignment Heuristics
+The virtual screen parser identifies the active view and resolves cursor context dynamically:
+1. **Header Matching**: Matches screen titles (`SONG`, `CHAIN`, `PHRASE`, `PROJECT`, `MIXER`, `EQ`, `TABLE`, `GROOVE`, `SCALE`, `EFFECTS`, `INSTRUMENT`, `SYSTEM`).
 2. **Modal Detection**: Identifies modal overlays (`KEYBOARD`, `FILE_BROWSER`, `INSTRUMENT POOL`, `CONFIRM_DIALOG`).
-3. **Left-Label Scanning**: On parameter-heavy synth pages (`WAVSYNTH`, `MACROSYNTH`, `SAMPLER`, `EFFECTS`), scans leftward from the cursor position to find the nearest non-empty alphanumeric label (e.g. `CUTOFF`, `RES`, `VOLUME`, `PITCH`).
+3. **Hardware Bar Gap Compensation**: Hardware displays render dividing bar gaps on rows 9, 14, 19, and 24. The parser normalizes these rows so step rows map consistently to the expected indices across `SONG`, `CHAIN`, and `PHRASE` screens.
+4. **Cursor Corner Cluster Aggregation**: M8's corner bracket cursor (top-left, top-right, bottom-left, bottom-right) is aggregated across render events, preventing dim row highlights or background text fills from overriding the active cursor position.
+5. **Token Boundary Snapping**: Multi-word labels and buttons (e.g. `VIEW INST.POOL`, `VIEW TIME STATS`, `MIDI_MAPPINGS`, `LIVE QUANTIZ`) snap their bounding boxes accurately to encapsulate full field names and values.
+6. **Left-Label Scanning**: On parameter-heavy synth and effect pages (`WAVSYNTH`, `MACROSYNTH`, `SAMPLER`, `EFFECTS`), scans leftward from the cursor position to extract the nearest alphanumeric label (e.g. `CUTOFF`, `RES`, `VOLUME`, `PITCH`), falling back to coordinate identifiers `CELL_R<row>_C<col>`.
+
+### Screen & Input Field Mappings Reference
+
+The table below outlines the standardized field identifiers returned in `input` for canonical screens:
+
+| Screen | Input ID Pattern | Description / Fields |
+| :--- | :--- | :--- |
+| **`SONG`** | `TRACK<1..8>_CHAIN_<XX>`, `ROW_<XX>` | 8 Track columns mapped across hex row indices `00`..`1F` (e.g. `TRACK1_CHAIN_00`, `TRACK8_CHAIN_0F`), plus row indicators `ROW_<XX>`. |
+| **`CHAIN`** | `PHRASE_<XX>`, `TRANSPOSE_<XX>`, `STEP_<XX>` | 16 Step rows (`00`..`0F`) mapped to phrase index, transpose value, and step index. |
+| **`PHRASE`** | `NOTE_<XX>`, `VOLUME_<XX>`, `INSTRUMENT_<XX>`, `FX1_<XX>`, `FX1_VAL_<XX>`, `FX2_<XX>`, `FX2_VAL_<XX>`, `FX3_<XX>`, `FX3_VAL_<XX>`, `STEP_<XX>` | 16 Step rows (`00`..`0F`) with granular resolution for note, velocity, instrument, and 3 effect command + value fields. |
+| **`PROJECT`** | `TEMPO`, `TRANSPOSE`, `GROOVE`, `SCALE`, `LIVE_QUANTIZ`, `MIDI_SETTINGS`, `MIDI_MAPPINGS`, `NAME`, `PROJECT_LOAD`, `PROJECT_SAVE`, `PROJECT_NEW`, `EXPORT_RENDER`, `EXPORT_BUNDLE`, `CLEAR_PHRASES`, `CLEAR_INST_TBL`, `INST_POOL`, `TIME_STATS`, `SYSTEM_SETTINGS` | Complete mapping for all 18 project settings, action buttons, and utilities. |
+| **`MIXER`** | `OUTPUT_VOL`, `TRACK1_VOL`..`TRACK8_VOL`, `CHO_RETURN`, `DEL_RETURN`, `REV_RETURN`, `INPUT_VOL`, `INPUT_PAN`, `INPUT_LIMIT`, `MIX_DC`, `INPUT_SOURCE`, `LIMITER`, `INPUT_CHORUS`, `USB_CHORUS`, `DJ_FILTER`, `INPUT_DELAY`, `USB_DELAY`, `OTT`, `INPUT_REVERB`, `USB_REVERB`, `EQ` | Full 26-control mixer mapping including track volume faders, FX returns, USB/analog inputs, and master bus processing. |
+| **`EQ`** | `LOW_GAIN`, `LOW_FREQ`, `LOW_Q`, `LOW_TYPE`, `LOW_MODE`, `MID_GAIN`, `MID_FREQ`, `MID_Q`, `MID_TYPE`, `MID_MODE`, `HIGH_GAIN`, `HIGH_FREQ`, `HIGH_Q`, `HIGH_TYPE`, `HIGH_MODE` | 15 3-band parametric equalizer parameters across Low, Mid, and High frequency bands. |
+| **`TABLE`** | `NOTE_<XX>`, `VOLUME_<XX>`, `FX1_<XX>`, `FX1_VAL_<XX>`, `FX2_<XX>`, `FX2_VAL_<XX>`, `FX3_<XX>`, `FX3_VAL_<XX>`, `STEP_<XX>`, `TABLE_NUM` | 16 Table modulation steps (`00`..`0F`) with granular resolution for transposition note, volume, and 3 effect command + value lanes, plus header table index. |
+| **`INST_MODS`** | `MOD<1..4>_TYPE`, `MOD<1..4>_DEST`, `MOD<1..4>_AMT`, `MOD<1..4>_SHP`, `MOD<1..4>_FRQ`, `MOD<1..4>_TRG`, `MOD<1..4>_ATK`, `MOD<1..4>_HLD`, `MOD<1..4>_DEC`, `MOD<1..4>_SUS`, `MOD<1..4>_REL`, `MOD<1..4>_SRC`, `MOD<1..4>_LOW`, `MOD<1..4>_HIGH`, `INST_NUM` | 4 Instrument Modulator slots (LFO, AHD/ADSR envelopes, Tracking, Drum) with source, multi-word destination (`MOD RATE`, `MOD AMT`, `MOD BOTH`), amount, and engine parameters. |
+| **`INST_POOL`** | `INST_<XX>`, `TYPE_<XX>`, `NAME_<XX>` | Overview list of all project instrument slots (`00`..`FF`) displaying slot index, engine/source type (`WAVSYN`, `MACRO`, `SAMPLER`, `FMSYN`, `HYPER`, `MIDI`), and custom patch name. |
+| **`GROOVE`** | `STEP_<XX>`, `TICKS_<XX>`, `GROOVE_NUM` | 16 Groove step tick assignments (`00`..`0F`) for custom swing/shuffle and time signature manipulation, plus header groove index. |
+| **`SCALE`** | `NOTE_<XX>`, `ENABLE_<XX>`, `OFFSET_<XX>`, `SCALE_NUM`, `KEY`, `NAME` | 12 Note interval configurations (`00`..`0B` for C through B) with note name, enable status, microtonal offset, plus root key, preset name, and scale index. |
+| **`KEYBOARD`** | `NAME_BUFFER`, `KEY_CHAR` | Interactive text entry dialog. |
+| **Synth & FX Pages** | Dynamic Left-Label (e.g. `CUTOFF`, `RES`, `VOLUME`, `PITCH`) | Dynamically extracted via left-label scanning, with fallback to `CELL_R<row>_C<col>`. |
+
+### State JSON Schema
+
+`GET_STATE` returns a single-line JSON string conforming to the following schema:
+
+```json
+{
+  "screen": "string (e.g. SONG, CHAIN, PHRASE, PROJECT, MIXER, EQ, INSTRUMENT, KEYBOARD)",
+  "cursor_col": "integer (0-39, or -1 if no cursor)",
+  "cursor_row": "integer (0-29, or -1 if no cursor)",
+  "cursor_width": "integer (character width of cursor selection)",
+  "input": "string (canonical field identifier e.g. NOTE_00, TRACK1_CHAIN_00, TEMPO)",
+  "value": "string (extracted text content at cursor)",
+  "header": "string (raw top header text)",
+  "play_state": "string (PLAYING or STOPPED)",
+  "cursor_text_line": "string (entire row text with bracketed cursor [VALUE])"
+}
+```
 
 ---
 
@@ -221,7 +265,30 @@ Audio recording hooks directly into `audio_cb_out` in [`src/backends/audio_sdl.c
 
 ---
 
-## 8. Extensive Python Code Examples
+## 8. Real-Time State Monitor GUI Tool
+
+`m8c` includes a standalone Tkinter GUI monitor in [`tools/m8_state_monitor.py`](file:///c:/dev/m8c/tools/m8_state_monitor.py) for developers and automation engineers to inspect live state and debug remote workflows without opening a full terminal dashboard.
+
+### Features
+- **Live $40 \times 30$ Screen Renderer**: Displays the active M8 ASCII grid in real-time with highlighted cursor brackets `[ ]`.
+- **Field & Cursor Inspector**: Live readouts for active screen type, header, focused input field name (e.g. `NOTE_00`, `TRACK1_CHAIN_02`), extracted value, play state, and coordinate indicators.
+- **Formatted JSON Inspector**: Real-time parsed view of the `GET_STATE` JSON payload.
+- **Remote Quick Controls**: Interactive buttons for navigation (`UP`, `DOWN`, `LEFT`, `RIGHT`), action keys (`EDIT`, `OPTION`, `SHIFT`, `PLAY`), and song trigger (`SHIFT+PLAY`).
+- **500ms Non-Blocking Polling**: Lightweight socket thread polling every half a second.
+
+### Launching the Monitor
+
+```bash
+# Terminal 1: Launch m8c in headless or GUI mode
+m8c.exe --headless
+
+# Terminal 2: Launch the Tkinter monitor
+python tools/m8_state_monitor.py
+```
+
+---
+
+## 9. Extensive Python Code Examples
 
 ### Example 1: Core `M8Client` Wrapper Class
 
@@ -686,7 +753,7 @@ if __name__ == "__main__":
 
 ---
 
-## 9. Troubleshooting & Best Practices
+## 10. Troubleshooting & Best Practices
 
 1. **Modal Menus Blocking Playback**:
    - If the M8 is in a modal file browser or instrument pool, pressing `SHIFT+PLAY` will not start song playback.

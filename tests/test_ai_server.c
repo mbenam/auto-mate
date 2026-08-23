@@ -164,6 +164,9 @@ static void test_live_tcp_server(void) {
   TEST_ASSERT(conn == 0, "Connected to 127.0.0.1:9123");
 
   if (conn == 0) {
+    int nodelay = 1;
+    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (const char *)&nodelay, sizeof(nodelay));
+
     char buf[256];
 
     // Test PING -> PONG
@@ -193,14 +196,15 @@ static void test_live_tcp_server(void) {
 
     SDL_Event ev;
     int event_handled = 0;
-    for (int i = 0; i < 50; i++) {
-      if (SDL_PollEvent(&ev)) {
+    for (int i = 0; i < 300; i++) {
+      while (SDL_PollEvent(&ev)) {
         if (ev.type == AI_SCREENSHOT_EVENT) {
           ai_server_handle_screenshot(NULL);
           event_handled = 1;
           break;
         }
       }
+      if (event_handled) break;
       SDL_Delay(10);
     }
     TEST_ASSERT(event_handled == 1, "SDL event loop caught AI_SCREENSHOT_EVENT");
@@ -415,6 +419,544 @@ static void test_virtual_screen_keyboard(void) {
   TEST_ASSERT(strstr(json, "\"value\":\"OK\"") != NULL, "Current value is OK");
 }
 
+static void draw_corner_cursor(int col, int row, int width_chars) {
+  int x = col * 8;
+  int y = row * 8;
+  int w = width_chars * 8;
+  int h = 8;
+  ai_screen_on_draw_rect(x, y, 2, 2, 0, 255, 255);
+  ai_screen_on_draw_rect(x + w - 2, y, 2, 2, 0, 255, 255);
+  ai_screen_on_draw_rect(x, y + h - 2, 2, 2, 0, 255, 255);
+  ai_screen_on_draw_rect(x + w - 2, y + h - 2, 2, 2, 0, 255, 255);
+}
+
+static int table_step_to_row(int step) {
+  if (step < 4) return 4 + step;
+  if (step < 8) return 10 + (step - 4);
+  if (step < 12) return 15 + (step - 8);
+  return 20 + (step - 12);
+}
+
+static void test_virtual_screen_table(void) {
+  printf("Running test_virtual_screen_table (iterating across all 16 rows and all fields)...\n");
+  ai_screen_init();
+  ai_screen_reset();
+
+  // Draw header: "TABLE 00"
+  feed_text_row(0, 0, "TABLE 00");
+  feed_text_row(2, 0, "  N   V  FX1   FX2   FX3");
+
+  // Draw 16 rows: 00..0F on rows aligned to 4-step hardware blocks
+  const char *fx_cmds[16] = {"VOL", "PAN", "PIT", "TIC", "HOP", "KIL", "CUT", "RES",
+                             "FIL", "AMP", "DEL", "REV", "CHO", "MOD", "DEG", "OFF"};
+  char row_texts[16][64];
+
+  for (int step = 0; step < 16; step++) {
+    int row = table_step_to_row(step);
+    snprintf(row_texts[step], sizeof(row_texts[step]),
+             "%02X +%02X %02X %s%02X %s%02X %s%02X",
+             step, step, 0x80 + step,
+             fx_cmds[step % 16], (step * 7) & 0xFF,
+             fx_cmds[(step + 3) % 16], (step * 11) & 0xFF,
+             fx_cmds[(step + 6) % 16], (step * 13) & 0xFF);
+    feed_text_row(row, 0, row_texts[step]);
+  }
+
+  char json[2048];
+
+  // Test 1: Header table number field
+  ai_screen_on_draw_rect(6 * 8, 0, 16, 8, 0, 255, 255);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"TABLE\"") != NULL, "Screen identified as TABLE");
+  TEST_ASSERT(strstr(json, "\"input\":\"TABLE_NUM\"") != NULL, "Header input identified as TABLE_NUM");
+  TEST_ASSERT(strstr(json, "\"value\":\"00\"") != NULL, "Header value identified as 00");
+
+  // Test 2: Iterate across all 16 steps (00 to 0F) and all columns
+  int all_table_fields_passed = 1;
+
+  for (int step = 0; step < 16; step++) {
+    int row = table_step_to_row(step);
+    char expected_step[4];
+    snprintf(expected_step, sizeof(expected_step), "%02X", step);
+
+    // 1. STEP column (col 0, width 2 chars)
+    draw_corner_cursor(0, row, 2);
+    ai_screen_get_state_json(json, sizeof(json));
+    char exp_input[32];
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"STEP_%s\"", expected_step);
+    char exp_val[32];
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", expected_step);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] STEP_%s check failed! json=%s\n", expected_step, json);
+      all_table_fields_passed = 0;
+    }
+
+    // 2. NOTE column (col 3, width 3 chars)
+    draw_corner_cursor(3, row, 3);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"NOTE_%s\"", expected_step);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"+%s\"", expected_step);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] NOTE_%s check failed! json=%s\n", expected_step, json);
+      all_table_fields_passed = 0;
+    }
+
+    // 3. VOLUME column (col 7, width 2 chars)
+    draw_corner_cursor(7, row, 2);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"VOLUME_%s\"", expected_step);
+    char exp_vol[8];
+    snprintf(exp_vol, sizeof(exp_vol), "%02X", 0x80 + step);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", exp_vol);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] VOLUME_%s check failed! json=%s\n", expected_step, json);
+      all_table_fields_passed = 0;
+    }
+
+    // 4. FX1 column (col 10, width 3 chars)
+    draw_corner_cursor(10, row, 3);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"FX1_%s\"", expected_step);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", fx_cmds[step % 16]);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] FX1_%s check failed! json=%s\n", expected_step, json);
+      all_table_fields_passed = 0;
+    }
+
+    // 5. FX1_VAL column (col 13, width 2 chars)
+    draw_corner_cursor(13, row, 2);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"FX1_VAL_%s\"", expected_step);
+    char exp_fx1v[8];
+    snprintf(exp_fx1v, sizeof(exp_fx1v), "%02X", (step * 7) & 0xFF);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", exp_fx1v);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] FX1_VAL_%s check failed! json=%s\n", expected_step, json);
+      all_table_fields_passed = 0;
+    }
+
+    // 6. FX2 column (col 16, width 3 chars)
+    draw_corner_cursor(16, row, 3);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"FX2_%s\"", expected_step);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", fx_cmds[(step + 3) % 16]);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] FX2_%s check failed! json=%s\n", expected_step, json);
+      all_table_fields_passed = 0;
+    }
+
+    // 7. FX2_VAL column (col 19, width 2 chars)
+    draw_corner_cursor(19, row, 2);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"FX2_VAL_%s\"", expected_step);
+    char exp_fx2v[8];
+    snprintf(exp_fx2v, sizeof(exp_fx2v), "%02X", (step * 11) & 0xFF);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", exp_fx2v);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] FX2_VAL_%s check failed! json=%s\n", expected_step, json);
+      all_table_fields_passed = 0;
+    }
+
+    // 8. FX3 column (col 22, width 3 chars)
+    draw_corner_cursor(22, row, 3);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"FX3_%s\"", expected_step);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", fx_cmds[(step + 6) % 16]);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] FX3_%s check failed! json=%s\n", expected_step, json);
+      all_table_fields_passed = 0;
+    }
+
+    // 9. FX3_VAL column (col 25, width 2 chars)
+    draw_corner_cursor(25, row, 2);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"FX3_VAL_%s\"", expected_step);
+    char exp_fx3v[8];
+    snprintf(exp_fx3v, sizeof(exp_fx3v), "%02X", (step * 13) & 0xFF);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", exp_fx3v);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] FX3_VAL_%s check failed! json=%s\n", expected_step, json);
+      all_table_fields_passed = 0;
+    }
+  }
+
+  TEST_ASSERT(all_table_fields_passed == 1, "All 16 steps x 9 fields (144 fields) on TABLE screen accurately resolved");
+}
+
+static void test_virtual_screen_inst_mods(void) {
+  printf("Running test_virtual_screen_inst_mods (iterating across all 4 MOD slots and parameters)...\n");
+  ai_screen_init();
+  ai_screen_reset();
+
+  // Draw header
+  feed_text_row(0, 0, "INST 00 MODS");
+
+  // Draw MOD 1 (LFO)
+  feed_text_row(3, 0, "MOD 1  LFO");
+  feed_text_row(4, 0, "  DEST CUTOFF");
+  feed_text_row(5, 0, "  AMT  80");
+  feed_text_row(6, 0, "  SHP  TRI   FRQ 08");
+
+  // Draw MOD 2 (AHD Envelope)
+  feed_text_row(8, 0, "MOD 2  AHD");
+  feed_text_row(9, 0, "  DEST PITCH");
+  feed_text_row(10, 0, "  AMT  40");
+  feed_text_row(11, 0, "  ATK  02   HLD 04   DEC 10");
+
+  // Draw MOD 3 (LFO modulating MOD RATE)
+  feed_text_row(13, 0, "MOD 3  LFO");
+  feed_text_row(14, 0, "  DEST MOD RATE");
+  feed_text_row(15, 0, "  AMT  20");
+  feed_text_row(16, 0, "  SHP  SIN   FRQ 16T");
+
+  // Draw MOD 4 (Tracking)
+  feed_text_row(18, 0, "MOD 4  TRACK");
+  feed_text_row(19, 0, "  DEST PAN");
+  feed_text_row(20, 0, "  AMT  60");
+  feed_text_row(21, 0, "  SRC  NOTE  LOW C-2  HIGH C-6");
+
+  char json[2048];
+
+  // 1. Header Instrument Number
+  draw_corner_cursor(5, 0, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"INST_MODS\"") != NULL, "Screen identified as INST_MODS");
+  TEST_ASSERT(strstr(json, "\"input\":\"INST_NUM\"") != NULL, "Header input identified as INST_NUM");
+  TEST_ASSERT(strstr(json, "\"value\":\"00\"") != NULL, "Header value identified as 00");
+
+  // 2. MOD 1 Slot & Parameters
+  draw_corner_cursor(7, 3, 3);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD1_TYPE\"") != NULL && strstr(json, "\"value\":\"LFO\"") != NULL, "MOD1_TYPE = LFO");
+
+  draw_corner_cursor(7, 4, 6);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD1_DEST\"") != NULL && strstr(json, "\"value\":\"CUTOFF\"") != NULL, "MOD1_DEST = CUTOFF");
+
+  draw_corner_cursor(7, 5, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD1_AMT\"") != NULL && strstr(json, "\"value\":\"80\"") != NULL, "MOD1_AMT = 80");
+
+  draw_corner_cursor(7, 6, 3);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD1_SHP\"") != NULL && strstr(json, "\"value\":\"TRI\"") != NULL, "MOD1_SHP = TRI");
+
+  draw_corner_cursor(17, 6, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD1_FRQ\"") != NULL && strstr(json, "\"value\":\"08\"") != NULL, "MOD1_FRQ = 08");
+
+  // 3. MOD 2 Slot & Parameters
+  draw_corner_cursor(7, 8, 3);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD2_TYPE\"") != NULL && strstr(json, "\"value\":\"AHD\"") != NULL, "MOD2_TYPE = AHD");
+
+  draw_corner_cursor(7, 9, 5);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD2_DEST\"") != NULL && strstr(json, "\"value\":\"PITCH\"") != NULL, "MOD2_DEST = PITCH");
+
+  draw_corner_cursor(7, 10, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD2_AMT\"") != NULL && strstr(json, "\"value\":\"40\"") != NULL, "MOD2_AMT = 40");
+
+  draw_corner_cursor(7, 11, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD2_ATK\"") != NULL && strstr(json, "\"value\":\"02\"") != NULL, "MOD2_ATK = 02");
+
+  draw_corner_cursor(17, 11, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD2_HLD\"") != NULL && strstr(json, "\"value\":\"04\"") != NULL, "MOD2_HLD = 04");
+
+  draw_corner_cursor(26, 11, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD2_DEC\"") != NULL && strstr(json, "\"value\":\"10\"") != NULL, "MOD2_DEC = 10");
+
+  // 4. MOD 3 Slot & Parameters (with multi-word DEST 'MOD RATE')
+  draw_corner_cursor(7, 13, 3);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD3_TYPE\"") != NULL && strstr(json, "\"value\":\"LFO\"") != NULL, "MOD3_TYPE = LFO");
+
+  draw_corner_cursor(7, 14, 8);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD3_DEST\"") != NULL && strstr(json, "\"value\":\"MOD RATE\"") != NULL, "MOD3_DEST = MOD RATE");
+
+  draw_corner_cursor(7, 15, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD3_AMT\"") != NULL && strstr(json, "\"value\":\"20\"") != NULL, "MOD3_AMT = 20");
+
+  draw_corner_cursor(7, 16, 3);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD3_SHP\"") != NULL && strstr(json, "\"value\":\"SIN\"") != NULL, "MOD3_SHP = SIN");
+
+  draw_corner_cursor(17, 16, 3);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD3_FRQ\"") != NULL && strstr(json, "\"value\":\"16T\"") != NULL, "MOD3_FRQ = 16T");
+
+  // 5. MOD 4 Slot & Parameters
+  draw_corner_cursor(7, 18, 5);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD4_TYPE\"") != NULL && strstr(json, "\"value\":\"TRACK\"") != NULL, "MOD4_TYPE = TRACK");
+
+  draw_corner_cursor(7, 19, 3);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD4_DEST\"") != NULL && strstr(json, "\"value\":\"PAN\"") != NULL, "MOD4_DEST = PAN");
+
+  draw_corner_cursor(7, 20, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD4_AMT\"") != NULL && strstr(json, "\"value\":\"60\"") != NULL, "MOD4_AMT = 60");
+
+  draw_corner_cursor(7, 21, 4);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD4_SRC\"") != NULL && strstr(json, "\"value\":\"NOTE\"") != NULL, "MOD4_SRC = NOTE");
+
+  draw_corner_cursor(17, 21, 3);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD4_LOW\"") != NULL && strstr(json, "\"value\":\"C-2\"") != NULL, "MOD4_LOW = C-2");
+
+  draw_corner_cursor(26, 21, 3);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"MOD4_HIGH\"") != NULL && strstr(json, "\"value\":\"C-6\"") != NULL, "MOD4_HIGH = C-6");
+}
+
+static void test_virtual_screen_groove(void) {
+  printf("Running test_virtual_screen_groove (iterating across all 16 rows and fields)...\n");
+  ai_screen_init();
+  ai_screen_reset();
+
+  // Draw header: "GROOVE 00"
+  feed_text_row(0, 0, "GROOVE 00");
+  feed_text_row(2, 0, "  TICKS");
+
+  // Draw 16 rows: 00..0F on rows aligned to 4-step hardware blocks
+  const uint8_t sample_ticks[16] = {6, 7, 5, 6, 8, 4, 6, 6, 12, 12, 6, 6, 0, 0, 0, 0};
+  char row_texts[16][32];
+
+  for (int step = 0; step < 16; step++) {
+    int row = table_step_to_row(step);
+    snprintf(row_texts[step], sizeof(row_texts[step]), "%02X %02X", step, sample_ticks[step]);
+    feed_text_row(row, 0, row_texts[step]);
+  }
+
+  char json[2048];
+
+  // Test 1: Header Groove Number field
+  draw_corner_cursor(7, 0, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"GROOVE\"") != NULL, "Screen identified as GROOVE");
+  TEST_ASSERT(strstr(json, "\"input\":\"GROOVE_NUM\"") != NULL, "Header input identified as GROOVE_NUM");
+  TEST_ASSERT(strstr(json, "\"value\":\"00\"") != NULL, "Header value identified as 00");
+
+  // Test 2: Iterate across all 16 steps (00 to 0F) and both columns
+  int all_groove_fields_passed = 1;
+
+  for (int step = 0; step < 16; step++) {
+    int row = table_step_to_row(step);
+    char expected_step[4];
+    snprintf(expected_step, sizeof(expected_step), "%02X", step);
+
+    // 1. STEP column (col 0, width 2 chars)
+    draw_corner_cursor(0, row, 2);
+    ai_screen_get_state_json(json, sizeof(json));
+    char exp_input[32];
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"STEP_%s\"", expected_step);
+    char exp_val[32];
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", expected_step);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] GROOVE STEP_%s check failed! json=%s\n", expected_step, json);
+      all_groove_fields_passed = 0;
+    }
+
+    // 2. TICKS column (col 3, width 2 chars)
+    draw_corner_cursor(3, row, 2);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"TICKS_%s\"", expected_step);
+    char exp_ticks[8];
+    snprintf(exp_ticks, sizeof(exp_ticks), "%02X", sample_ticks[step]);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", exp_ticks);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] GROOVE TICKS_%s check failed! json=%s\n", expected_step, json);
+      all_groove_fields_passed = 0;
+    }
+  }
+
+  TEST_ASSERT(all_groove_fields_passed == 1, "All 16 steps x 2 fields (32 fields) on GROOVE screen accurately resolved");
+}
+
+static void test_virtual_screen_scale(void) {
+  printf("Running test_virtual_screen_scale (iterating across all 12 note intervals and header fields)...\n");
+  ai_screen_init();
+  ai_screen_reset();
+
+  // Draw Header: "SCALE 00  KEY C" and "NAME MAJOR"
+  feed_text_row(0, 0, "SCALE 00  KEY C");
+  feed_text_row(1, 0, "NAME MAJOR");
+  feed_text_row(2, 0, "NOTE EN  OFFSET");
+
+  // 12 Semitones: C through B
+  const char *note_names[12] = {"C ", "C#", "D ", "D#", "E ", "F ", "F#", "G ", "G#", "A ", "A#", "B "};
+  const char *en_states[12] = {"ON ", "---", "ON ", "---", "ON ", "ON ", "---", "ON ", "---", "ON ", "---", "ON "};
+  const char *offsets[12] = {"+00.00", "+00.00", "+00.00", "+00.00", "+00.00", "+00.00",
+                             "+00.00", "+00.00", "+00.00", "+00.00", "+00.00", "+00.00"};
+  char row_texts[12][32];
+
+  for (int interval = 0; interval < 12; interval++) {
+    int row = 3 + interval;
+    snprintf(row_texts[interval], sizeof(row_texts[interval]), "%s  %s %s",
+             note_names[interval], en_states[interval], offsets[interval]);
+    feed_text_row(row, 0, row_texts[interval]);
+  }
+
+  char json[2048];
+
+  // Test 1: Header Fields (SCALE_NUM, KEY, NAME)
+  draw_corner_cursor(6, 0, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"SCALE\"") != NULL, "Screen identified as SCALE");
+  TEST_ASSERT(strstr(json, "\"input\":\"SCALE_NUM\"") != NULL, "Header input identified as SCALE_NUM");
+  TEST_ASSERT(strstr(json, "\"value\":\"00\"") != NULL, "Header value identified as 00");
+
+  draw_corner_cursor(14, 0, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"KEY\"") != NULL, "Header input identified as KEY");
+  TEST_ASSERT(strstr(json, "\"value\":\"C\"") != NULL, "Header key value identified as C");
+
+  draw_corner_cursor(5, 1, 5);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"NAME\"") != NULL, "Header input identified as NAME");
+  TEST_ASSERT(strstr(json, "\"value\":\"MAJOR\"") != NULL, "Header name value identified as MAJOR");
+
+  // Test 2: Iterate across all 12 note intervals (00 to 0B)
+  int all_scale_fields_passed = 1;
+
+  for (int interval = 0; interval < 12; interval++) {
+    int row = 3 + interval;
+    char expected_int[4];
+    snprintf(expected_int, sizeof(expected_int), "%02X", interval);
+
+    char clean_note[4] = {0};
+    snprintf(clean_note, sizeof(clean_note), "%s", note_names[interval]);
+    if (clean_note[1] == ' ') clean_note[1] = '\0';
+
+    char clean_en[4] = {0};
+    snprintf(clean_en, sizeof(clean_en), "%s", en_states[interval]);
+    if (clean_en[2] == ' ') clean_en[2] = '\0';
+
+    // 1. NOTE column (col 0..2)
+    draw_corner_cursor(0, row, 2);
+    ai_screen_get_state_json(json, sizeof(json));
+    char exp_input[32];
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"NOTE_%s\"", expected_int);
+    char exp_val[32];
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", clean_note);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] SCALE NOTE_%s check failed! json=%s\n", expected_int, json);
+      all_scale_fields_passed = 0;
+    }
+
+    // 2. ENABLE column (col 4..6)
+    draw_corner_cursor(4, row, 3);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"ENABLE_%s\"", expected_int);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", clean_en);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] SCALE ENABLE_%s check failed! json=%s\n", expected_int, json);
+      all_scale_fields_passed = 0;
+    }
+
+    // 3. OFFSET column (col 8..14)
+    draw_corner_cursor(8, row, 6);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"OFFSET_%s\"", expected_int);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", offsets[interval]);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] SCALE OFFSET_%s check failed! json=%s\n", expected_int, json);
+      all_scale_fields_passed = 0;
+    }
+  }
+
+  TEST_ASSERT(all_scale_fields_passed == 1, "All 12 intervals x 3 fields (36 fields) on SCALE screen accurately resolved");
+}
+
+static void test_virtual_screen_inst_pool(void) {
+  printf("Running test_virtual_screen_inst_pool (iterating across 16 instrument slots and fields)...\n");
+  ai_screen_init();
+  ai_screen_reset();
+
+  // Draw Header: "INSTRUMENT POOL" and column labels
+  feed_text_row(0, 0, "INSTRUMENT POOL");
+  feed_text_row(2, 0, "NO  TYPE     NAME");
+
+  const char *inst_types[16] = {
+      "WAVSYN ", "MACRO  ", "SAMPLER", "FMSYN  ", "MIDI   ", "HYPER  ", "WAVSYN ", "SAMPLER",
+      "MACRO  ", "FMSYN  ", "SAMPLER", "MIDI   ", "WAVSYN ", "HYPER  ", "SAMPLER", "MACRO  "};
+  const char *inst_names[16] = {
+      "KICK 01 ", "ACID BS ", "SNARE909", "EPRHODES", "EXTSYNTH", "HYPERPAD", "SUB BASS", "HIHAT CL",
+      "CHORD 01", "FM BELLS", "VOX CHNT", "MIDI OUT", "LEAD SAW", "WARM PAD", "PERC 01 ", "PLUCK 01"};
+  char row_texts[16][40];
+
+  for (int slot = 0; slot < 16; slot++) {
+    int row = 3 + slot;
+    snprintf(row_texts[slot], sizeof(row_texts[slot]), "%02X  %s  %s",
+             slot, inst_types[slot], inst_names[slot]);
+    feed_text_row(row, 0, row_texts[slot]);
+  }
+
+  char json[2048];
+
+  // Test: Iterate across 16 slots and all 3 columns (INST, TYPE, NAME)
+  int all_pool_fields_passed = 1;
+
+  for (int slot = 0; slot < 16; slot++) {
+    int row = 3 + slot;
+    char expected_slot[4];
+    snprintf(expected_slot, sizeof(expected_slot), "%02X", slot);
+
+    char clean_type[16] = {0};
+    snprintf(clean_type, sizeof(clean_type), "%s", inst_types[slot]);
+    int t_len = (int)strlen(clean_type);
+    while (t_len > 0 && clean_type[t_len - 1] == ' ') clean_type[--t_len] = '\0';
+
+    char clean_name[16] = {0};
+    snprintf(clean_name, sizeof(clean_name), "%s", inst_names[slot]);
+    int n_len = (int)strlen(clean_name);
+    while (n_len > 0 && clean_name[n_len - 1] == ' ') clean_name[--n_len] = '\0';
+
+    // 1. INST Slot column (col 0..2)
+    draw_corner_cursor(0, row, 2);
+    ai_screen_get_state_json(json, sizeof(json));
+    TEST_ASSERT(strstr(json, "\"screen\":\"INST_POOL\"") != NULL, "Screen identified as INST_POOL");
+    char exp_input[32];
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"INST_%s\"", expected_slot);
+    char exp_val[32];
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", expected_slot);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] INST_POOL INST_%s check failed! json=%s\n", expected_slot, json);
+      all_pool_fields_passed = 0;
+    }
+
+    // 2. TYPE column (col 4..11)
+    draw_corner_cursor(4, row, 7);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"TYPE_%s\"", expected_slot);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", clean_type);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] INST_POOL TYPE_%s check failed! json=%s\n", expected_slot, json);
+      all_pool_fields_passed = 0;
+    }
+
+    // 3. NAME column (col 13..21)
+    draw_corner_cursor(13, row, 8);
+    ai_screen_get_state_json(json, sizeof(json));
+    snprintf(exp_input, sizeof(exp_input), "\"input\":\"NAME_%s\"", expected_slot);
+    snprintf(exp_val, sizeof(exp_val), "\"value\":\"%s\"", clean_name);
+    if (!strstr(json, exp_input) || !strstr(json, exp_val)) {
+      printf("  [FAIL] INST_POOL NAME_%s check failed! json=%s\n", expected_slot, json);
+      all_pool_fields_passed = 0;
+    }
+  }
+
+  TEST_ASSERT(all_pool_fields_passed == 1, "All 16 slots x 3 fields (48 fields) on INST_POOL screen accurately resolved");
+}
+
 int main(int argc, char *argv[]) {
   (void)argc;
   (void)argv;
@@ -427,6 +969,11 @@ int main(int argc, char *argv[]) {
   test_invalid_keys();
   test_logger();
   test_virtual_screen_phrase();
+  test_virtual_screen_table();
+  test_virtual_screen_inst_mods();
+  test_virtual_screen_groove();
+  test_virtual_screen_scale();
+  test_virtual_screen_inst_pool();
   test_virtual_screen_synth_left_label();
   test_virtual_screen_keyboard();
   test_audio_recording();

@@ -11,6 +11,14 @@ static m8_screen_state_s g_screen_state;
 static SDL_Mutex *screen_mutex = NULL;
 static int screen_initialized = 0;
 
+// Internal state to aggregate cursor corner brackets (TL, TR, BL, BR)
+static int g_cur_min_x = -1;
+static int g_cur_min_y = -1;
+static int g_cur_max_x = -1;
+static int g_cur_max_y = -1;
+static int g_cur_corner_count = 0;
+static Uint64 g_last_corner_tick = 0;
+
 void ai_screen_init(void) {
   if (!screen_mutex) {
     screen_mutex = SDL_CreateMutex();
@@ -58,17 +66,15 @@ void ai_screen_reset(void) {
   }
   g_screen_state.cursor_col = -1;
   g_screen_state.cursor_row = -1;
+  g_cur_min_x = -1;
+  g_cur_min_y = -1;
+  g_cur_max_x = -1;
+  g_cur_max_y = -1;
+  g_cur_corner_count = 0;
+  g_last_corner_tick = 0;
 
   if (screen_mutex) SDL_UnlockMutex(screen_mutex);
 }
-
-// Internal state to aggregate cursor corner brackets (TL, TR, BL, BR)
-static int g_cur_min_x = -1;
-static int g_cur_min_y = -1;
-static int g_cur_max_x = -1;
-static int g_cur_max_y = -1;
-static int g_cur_corner_count = 0;
-static Uint64 g_last_corner_tick = 0;
 
 void ai_screen_on_draw_char(int c, int px_x, int px_y,
                             uint8_t fg_r, uint8_t fg_g, uint8_t fg_b,
@@ -141,8 +147,8 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t
 
     // 1. Check for small corner brackets of the M8 cursor (e.g. w <= 4, h <= 4)
     if (w <= 4 && h <= 4) {
-      // If close to active corner cluster and within 20ms, aggregate
-      if (g_cur_min_x >= 0 && (now - g_last_corner_tick < 20) &&
+      // If close to active corner cluster, under 4 corners, and within 20ms, aggregate
+      if (g_cur_min_x >= 0 && (now - g_last_corner_tick < 20) && (g_cur_corner_count < 4) &&
           abs(px_x - g_cur_min_x) <= 180 && abs(px_y - g_cur_min_y) <= 18) {
         if (px_x < g_cur_min_x) g_cur_min_x = px_x;
         if (px_y < g_cur_min_y) g_cur_min_y = px_y;
@@ -164,11 +170,17 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t
         int col = (g_cur_min_x + 2) / 8;
         int row = (g_cur_min_y + 2) / 8;
 
-        // Correct for M8 16-pixel hardware bar gap rows (9, 14, 19, 24)
-        if (row == 9) row = 8;
-        else if (row == 14) row = 13;
-        else if (row == 19) row = 18;
-        else if (row == 24) row = 23;
+        // Correct for M8 16-pixel hardware bar gap rows (9, 14, 19, 24) on tracker screens
+        if (strcmp(g_screen_state.active_screen, "SONG") == 0 ||
+            strcmp(g_screen_state.active_screen, "CHAIN") == 0 ||
+            strcmp(g_screen_state.active_screen, "PHRASE") == 0 ||
+            strcmp(g_screen_state.active_screen, "TABLE") == 0 ||
+            strcmp(g_screen_state.active_screen, "GROOVE") == 0) {
+          if (row == 9) row = 8;
+          else if (row == 14) row = 13;
+          else if (row == 19) row = 18;
+          else if (row == 24) row = 23;
+        }
 
         int cols_wide = (g_cur_max_x - g_cur_min_x + 7) / 8;
         if (cols_wide < 1) cols_wide = 1;
@@ -384,16 +396,16 @@ static const m8_static_field_map_s g_field_map[] = {
     {"EQ", 25, 25, 29, 39, "HIGH_TYPE"},
     {"EQ", 26, 26, 29, 39, "HIGH_MODE"},
 
-    // TABLE Screen (Steps 00..0F on rows 3..18)
-    {"TABLE", 3, 18, 0, 1, "STEP"},
-    {"TABLE", 3, 18, 2, 5, "NOTE"},
-    {"TABLE", 3, 18, 6, 8, "VOLUME"},
-    {"TABLE", 3, 18, 9, 13, "FX1"},
-    {"TABLE", 3, 18, 14, 18, "FX2"},
+    // TABLE Header (Table index e.g. TABLE 00)
+    {"TABLE", 0, 2, 5, 12, "TABLE_NUM"},
 
-    // GROOVE Screen
-    {"GROOVE", 3, 18, 0, 1, "STEP"},
-    {"GROOVE", 3, 18, 3, 6, "TICKS"},
+    // GROOVE Header (Groove index e.g. GROOVE 00)
+    {"GROOVE", 0, 2, 5, 12, "GROOVE_NUM"},
+
+    // SCALE Header
+    {"SCALE", 0, 0, 5, 10, "SCALE_NUM"},
+    {"SCALE", 0, 0, 11, 20, "KEY"},
+    {"SCALE", 1, 1, 4, 30, "NAME"},
 
     // KEYBOARD / Name Picker
     {"KEYBOARD", 2, 6, 0, 39, "NAME_BUFFER"},
@@ -505,6 +517,176 @@ static void snap_cursor_to_token(int row, int *col, int *width) {
     }
   }
 
+  // TABLE Screen: Note, Vol, FX1, FX1_Val, FX2, FX2_Val, FX3, FX3_Val
+  if (strcmp(g_screen_state.active_screen, "TABLE") == 0 && row >= 3 && row <= 28) {
+    if (c <= 1) {
+      *col = 0;
+      *width = 2;
+      return;
+    } else if (c >= 2 && c <= 5) {
+      *col = 3;
+      *width = 3;
+      return;
+    } else if (c >= 6 && c <= 8) {
+      *col = 7;
+      *width = 2;
+      return;
+    }
+
+    int is_packed = (c <= 12) || (len > 10 && line[10] != ' ') || (len > 9 && line[9] != ' ');
+    if (is_packed && c <= 12) is_packed = 1;
+    else if (!is_packed && len > 13 && line[13] != ' ' && len > 10 && line[10] == ' ') is_packed = 0;
+
+    if (is_packed) {
+      if (c >= 9 && c <= 12) {
+        *col = 10;
+        *width = 3;
+        return;
+      } else if (c >= 13 && c <= 15) {
+        *col = 13;
+        *width = 2;
+        return;
+      } else if (c >= 16 && c <= 18) {
+        *col = 16;
+        *width = 3;
+        return;
+      } else if (c >= 19 && c <= 21) {
+        *col = 19;
+        *width = 2;
+        return;
+      } else if (c >= 22 && c <= 24) {
+        *col = 22;
+        *width = 3;
+        return;
+      } else if (c >= 25 && c <= 28) {
+        *col = 25;
+        *width = 2;
+        return;
+      }
+    } else {
+      if (c >= 12 && c <= 14) {
+        *col = 13;
+        *width = 3;
+        return;
+      } else if (c >= 15 && c <= 17) {
+        *col = 16;
+        *width = 2;
+        return;
+      } else if (c >= 18 && c <= 20) {
+        *col = 19;
+        *width = 3;
+        return;
+      } else if (c >= 21 && c <= 23) {
+        *col = 22;
+        *width = 2;
+        return;
+      } else if (c >= 24 && c <= 26) {
+        *col = 25;
+        *width = 3;
+        return;
+      } else if (c >= 27 && c <= 30) {
+        *col = 28;
+        *width = 2;
+        return;
+      }
+    }
+  }
+
+  // INST_MODS Screen multi-word token snapping (e.g. MOD RATE, MOD AMT, MOD BOTH)
+  if (strcmp(g_screen_state.active_screen, "INST_MODS") == 0 && row >= 2 && row <= 28) {
+    if (strstr(line, "MOD RATE") != NULL && c >= 6 && c <= 25) {
+      const char *p = strstr(line, "MOD RATE");
+      *col = (int)(p - line);
+      *width = 8;
+      return;
+    }
+    if (strstr(line, "MOD AMT") != NULL && c >= 6 && c <= 25) {
+      const char *p = strstr(line, "MOD AMT");
+      *col = (int)(p - line);
+      *width = 7;
+      return;
+    }
+    if (strstr(line, "MOD BOTH") != NULL && c >= 6 && c <= 25) {
+      const char *p = strstr(line, "MOD BOTH");
+      *col = (int)(p - line);
+      *width = 8;
+      return;
+    }
+  }
+
+  // GROOVE Screen: Step (col 0..1, width 2), Ticks (col 2..8, width 2)
+  if (strcmp(g_screen_state.active_screen, "GROOVE") == 0 && row >= 3 && row <= 28) {
+    if (c <= 1) {
+      *col = 0;
+      *width = 2;
+      return;
+    } else if (c >= 2 && c <= 8) {
+      int tc = 3;
+      if (tc < len && line[tc] == ' ' && tc + 1 < len && line[tc + 1] != ' ') tc++;
+      *col = tc;
+      *width = 2;
+      return;
+    }
+  }
+
+  // SCALE Screen: Note (col 0..3), Enable (col 4..7), Offset (col 8..18)
+  if (strcmp(g_screen_state.active_screen, "SCALE") == 0 && row >= 3 && row <= 28) {
+    if (c <= 3) {
+      int sc = 0;
+      while (sc < len && line[sc] == ' ') sc++;
+      int ec = sc;
+      while (ec < len && line[ec] != ' ') ec++;
+      *col = sc;
+      *width = (ec > sc) ? (ec - sc) : 2;
+      return;
+    } else if (c >= 4 && c <= 7) {
+      int sc = 4;
+      while (sc < len && line[sc] == ' ') sc++;
+      int ec = sc;
+      while (ec < len && line[ec] != ' ') ec++;
+      *col = sc;
+      *width = (ec > sc) ? (ec - sc) : 3;
+      return;
+    } else if (c >= 8) {
+      int sc = 8;
+      while (sc < len && line[sc] == ' ') sc++;
+      int ec = sc;
+      while (ec < len && line[ec] != ' ') ec++;
+      *col = sc;
+      *width = (ec > sc) ? (ec - sc) : 6;
+      return;
+    }
+  }
+
+  // INST_POOL Screen: Slot (col 0..3), Type (col 4..12), Name (col 13..39)
+  if (strcmp(g_screen_state.active_screen, "INST_POOL") == 0 && row >= 3 && row <= 28) {
+    if (c <= 3) {
+      int sc = 0;
+      while (sc < len && line[sc] == ' ') sc++;
+      int ec = sc;
+      while (ec < len && line[ec] != ' ') ec++;
+      *col = sc;
+      *width = (ec > sc) ? (ec - sc) : 2;
+      return;
+    } else if (c >= 4 && c <= 12) {
+      int sc = 4;
+      while (sc < len && line[sc] == ' ') sc++;
+      int ec = sc;
+      while (ec < len && line[ec] != ' ') ec++;
+      *col = sc;
+      *width = (ec > sc) ? (ec - sc) : 6;
+      return;
+    } else if (c >= 13) {
+      int sc = 13;
+      while (sc < len && line[sc] == ' ') sc++;
+      int ec = len;
+      while (ec > sc && line[ec - 1] == ' ') ec--;
+      *col = sc;
+      *width = (ec > sc) ? (ec - sc) : 4;
+      return;
+    }
+  }
+
   int start = c;
   int end = c;
 
@@ -570,6 +752,12 @@ static void analyze_screen_state(void) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "EQ");
   } else if (strncmp(header_raw, "MIXER", 5) == 0 || strncmp(header_raw, "MIX", 3) == 0) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "MIXER");
+  } else if (strstr(header_raw, "POOL") != NULL || strstr(header_raw, "INST. POOL") != NULL ||
+             strstr(header_raw, "INST POOL") != NULL || strstr(header_raw, "INST.POOL") != NULL) {
+    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "INST_POOL");
+  } else if (strstr(header_raw, "MODS") != NULL || strstr(header_raw, "MODULATOR") != NULL ||
+             strstr(header_raw, "MODIFIER") != NULL) {
+    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "INST_MODS");
   } else if (strncmp(header_raw, "INST", 4) == 0 || strstr(header_raw, "SYNTH") != NULL ||
              strstr(header_raw, "SAMPLER") != NULL || strstr(header_raw, "WAVSYN") != NULL ||
              strstr(header_raw, "MACRO") != NULL || strstr(header_raw, "FMSYN") != NULL ||
@@ -731,6 +919,273 @@ static void analyze_screen_state(void) {
       } else if (col <= 1) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
                  "STEP_%s", step_hex);
+        matched = 1;
+      }
+    }
+    // Special Dynamic Screen Matrix: TABLE (Steps 00..0F: Note, Volume, FX1, FX1_Val, FX2, FX2_Val, FX3, FX3_Val)
+    else if (strcmp(g_screen_state.active_screen, "TABLE") == 0 && row >= 3 && row <= 28) {
+      const char *line = g_screen_state.text[row];
+      char step_hex[4] = "00";
+      int p = 0;
+      while (line[p] == ' ' || line[p] == '<') p++;
+      if (isxdigit((unsigned char)line[p])) {
+        if (isxdigit((unsigned char)line[p + 1])) {
+          step_hex[0] = (char)toupper((unsigned char)line[p]);
+          step_hex[1] = (char)toupper((unsigned char)line[p + 1]);
+          step_hex[2] = '\0';
+        } else {
+          step_hex[0] = '0';
+          step_hex[1] = (char)toupper((unsigned char)line[p]);
+          step_hex[2] = '\0';
+        }
+      } else {
+        snprintf(step_hex, sizeof(step_hex), "%02X", row >= 7 ? row - 7 : row);
+      }
+
+      int is_packed = (col <= 12) || (strlen(line) > 10 && line[10] != ' ') || (strlen(line) > 9 && line[9] != ' ');
+      if (is_packed && col <= 12) is_packed = 1;
+      else if (!is_packed && strlen(line) > 13 && line[13] != ' ' && strlen(line) > 10 && line[10] == ' ') is_packed = 0;
+
+      if (col <= 1) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "STEP_%s", step_hex);
+        matched = 1;
+      } else if (col >= 2 && col <= 5) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "NOTE_%s", step_hex);
+        matched = 1;
+      } else if (col >= 6 && col <= 8) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "VOLUME_%s", step_hex);
+        matched = 1;
+      } else if (is_packed) {
+        if (col >= 9 && col <= 12) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX1_%s", step_hex);
+          matched = 1;
+        } else if (col >= 13 && col <= 15) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX1_VAL_%s", step_hex);
+          matched = 1;
+        } else if (col >= 16 && col <= 18) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX2_%s", step_hex);
+          matched = 1;
+        } else if (col >= 19 && col <= 21) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX2_VAL_%s", step_hex);
+          matched = 1;
+        } else if (col >= 22 && col <= 24) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX3_%s", step_hex);
+          matched = 1;
+        } else if (col >= 25 && col <= 28) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX3_VAL_%s", step_hex);
+          matched = 1;
+        }
+      } else {
+        if (col >= 12 && col <= 14) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX1_%s", step_hex);
+          matched = 1;
+        } else if (col >= 15 && col <= 17) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX1_VAL_%s", step_hex);
+          matched = 1;
+        } else if (col >= 18 && col <= 20) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX2_%s", step_hex);
+          matched = 1;
+        } else if (col >= 21 && col <= 23) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX2_VAL_%s", step_hex);
+          matched = 1;
+        } else if (col >= 24 && col <= 26) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX3_%s", step_hex);
+          matched = 1;
+        } else if (col >= 27 && col <= 31) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "FX3_VAL_%s", step_hex);
+          matched = 1;
+        }
+      }
+    }
+
+    // Special Dynamic Screen Matrix: INST_MODS (Modulators 1..4: Type, Dest, Amount, and engine parameters)
+    else if (strcmp(g_screen_state.active_screen, "INST_MODS") == 0) {
+      if (row <= 2 && col >= 5 && col <= 12) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "INST_NUM");
+        matched = 1;
+      } else {
+        // Find which MOD slot (1..4) the current row belongs to
+        int mod_slot = 1;
+        for (int r = row; r >= 0; r--) {
+          const char *l = g_screen_state.text[r];
+          if (strstr(l, "MOD 4") || strstr(l, "MOD4") || strstr(l, "MOD.4")) { mod_slot = 4; break; }
+          if (strstr(l, "MOD 3") || strstr(l, "MOD3") || strstr(l, "MOD.3")) { mod_slot = 3; break; }
+          if (strstr(l, "MOD 2") || strstr(l, "MOD2") || strstr(l, "MOD.2")) { mod_slot = 2; break; }
+          if (strstr(l, "MOD 1") || strstr(l, "MOD1") || strstr(l, "MOD.1")) { mod_slot = 1; break; }
+        }
+
+        const char *line = g_screen_state.text[row];
+        // Check if cursor is on the "MOD <N> [TYPE]" header line
+        if (strstr(line, "MOD 1") || strstr(line, "MOD 2") || strstr(line, "MOD 3") || strstr(line, "MOD 4") ||
+            strstr(line, "MOD1") || strstr(line, "MOD2") || strstr(line, "MOD3") || strstr(line, "MOD4")) {
+          if (col >= 6) {
+            snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "MOD%d_TYPE", mod_slot);
+            matched = 1;
+          } else {
+            snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "MOD%d_SLOT", mod_slot);
+            matched = 1;
+          }
+        } else {
+          // Parameter line under MOD slot: extract left label
+          char left_label[32] = {0};
+          extract_left_label(line, col, left_label, sizeof(left_label));
+          if (strlen(left_label) > 0) {
+            char std_label[32] = {0};
+            for (size_t i = 0; i < strlen(left_label) && i < sizeof(std_label) - 1; i++) {
+              std_label[i] = (char)toupper((unsigned char)left_label[i]);
+            }
+            if (strcmp(std_label, "AMOUNT") == 0) snprintf(std_label, sizeof(std_label), "AMT");
+            else if (strcmp(std_label, "FREQ") == 0 || strcmp(std_label, "RATE") == 0) snprintf(std_label, sizeof(std_label), "FRQ");
+            else if (strcmp(std_label, "SHAPE") == 0 || strcmp(std_label, "OSC") == 0) snprintf(std_label, sizeof(std_label), "SHP");
+            else if (strcmp(std_label, "TRIG") == 0 || strcmp(std_label, "RE-TRIG") == 0) snprintf(std_label, sizeof(std_label), "TRG");
+            else if (strcmp(std_label, "ATTACK") == 0) snprintf(std_label, sizeof(std_label), "ATK");
+            else if (strcmp(std_label, "HOLD") == 0) snprintf(std_label, sizeof(std_label), "HLD");
+            else if (strcmp(std_label, "DECAY") == 0) snprintf(std_label, sizeof(std_label), "DEC");
+            else if (strcmp(std_label, "SUSTAIN") == 0) snprintf(std_label, sizeof(std_label), "SUS");
+            else if (strcmp(std_label, "RELEASE") == 0) snprintf(std_label, sizeof(std_label), "REL");
+
+            snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "MOD%d_%s", mod_slot, std_label);
+            matched = 1;
+          } else {
+            snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "MOD%d_PARAM", mod_slot);
+            matched = 1;
+          }
+        }
+      }
+    }
+
+    // Special Dynamic Screen Matrix: GROOVE (Steps 00..0F: Step, Ticks, and Header Groove Num)
+    else if (strcmp(g_screen_state.active_screen, "GROOVE") == 0) {
+      if (row <= 2 && col >= 5 && col <= 12) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "GROOVE_NUM");
+        matched = 1;
+      } else if (row >= 3 && row <= 28) {
+        char step_hex[4] = "00";
+        char raw_step[8] = {0};
+        extract_token_at(g_screen_state.text[row], 0, 2, raw_step, sizeof(raw_step));
+        if (strlen(raw_step) >= 2 && isxdigit((unsigned char)raw_step[0]) &&
+            isxdigit((unsigned char)raw_step[1])) {
+          snprintf(step_hex, sizeof(step_hex), "%c%c", (char)toupper((unsigned char)raw_step[0]),
+                   (char)toupper((unsigned char)raw_step[1]));
+        } else {
+          int step_idx = row - 3;
+          if (step_idx < 0) step_idx = 0;
+          if (step_idx > 15) step_idx = 15;
+          snprintf(step_hex, sizeof(step_hex), "%02X", step_idx);
+        }
+
+        if (col <= 1) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "STEP_%s", step_hex);
+          matched = 1;
+        } else {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "TICKS_%s", step_hex);
+          matched = 1;
+        }
+      }
+    }
+
+    // Special Dynamic Screen Matrix: SCALE (12 Note Intervals: Note, Enable, Offset, and Header Scale/Key/Name)
+    else if (strcmp(g_screen_state.active_screen, "SCALE") == 0) {
+      const char *line = g_screen_state.text[row];
+      if (row == 0 || strstr(line, "SCALE") != NULL) {
+        if (col >= 5 && col <= 10) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "SCALE_NUM");
+          matched = 1;
+        } else if (col >= 11 || strstr(line, "KEY") != NULL) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "KEY");
+          matched = 1;
+        }
+      } else if (row == 1 || strstr(line, "NAME") != NULL) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "NAME");
+        matched = 1;
+      } else if (row >= 3 && row <= 28) {
+        char raw_note[8] = {0};
+        extract_token_at(line, 0, 3, raw_note, sizeof(raw_note));
+        int interval = -1;
+        if (strncmp(raw_note, "C#", 2) == 0) interval = 1;
+        else if (strncmp(raw_note, "C", 1) == 0) interval = 0;
+        else if (strncmp(raw_note, "D#", 2) == 0) interval = 3;
+        else if (strncmp(raw_note, "D", 1) == 0) interval = 2;
+        else if (strncmp(raw_note, "E", 1) == 0) interval = 4;
+        else if (strncmp(raw_note, "F#", 2) == 0) interval = 6;
+        else if (strncmp(raw_note, "F", 1) == 0) interval = 5;
+        else if (strncmp(raw_note, "G#", 2) == 0) interval = 8;
+        else if (strncmp(raw_note, "G", 1) == 0) interval = 7;
+        else if (strncmp(raw_note, "A#", 2) == 0) interval = 10;
+        else if (strncmp(raw_note, "A", 1) == 0) interval = 9;
+        else if (strncmp(raw_note, "B", 1) == 0) interval = 11;
+
+        char int_hex[4] = "00";
+        if (interval >= 0 && interval <= 11) {
+          snprintf(int_hex, sizeof(int_hex), "%02X", interval);
+        } else {
+          int idx = row - 3;
+          if (idx < 0) idx = 0;
+          if (idx > 11) idx = 11;
+          snprintf(int_hex, sizeof(int_hex), "%02X", idx);
+        }
+
+        if (col <= 3) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "NOTE_%s", int_hex);
+          matched = 1;
+        } else if (col >= 4 && col <= 7) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "ENABLE_%s", int_hex);
+          matched = 1;
+        } else {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                   "OFFSET_%s", int_hex);
+          matched = 1;
+        }
+      }
+    }
+
+    // Special Dynamic Screen Matrix: INST_POOL (Instrument slots: Slot, Type, Name)
+    else if (strcmp(g_screen_state.active_screen, "INST_POOL") == 0 && row >= 3 && row <= 28) {
+      const char *line = g_screen_state.text[row];
+      char raw_slot[8] = {0};
+      extract_token_at(line, 0, 3, raw_slot, sizeof(raw_slot));
+      char slot_hex[4] = "00";
+      if (strlen(raw_slot) >= 2 && isxdigit((unsigned char)raw_slot[0]) &&
+          isxdigit((unsigned char)raw_slot[1])) {
+        snprintf(slot_hex, sizeof(slot_hex), "%c%c", (char)toupper((unsigned char)raw_slot[0]),
+                 (char)toupper((unsigned char)raw_slot[1]));
+      } else {
+        int idx = row - 3;
+        if (idx < 0) idx = 0;
+        if (idx > 63) idx = 63;
+        snprintf(slot_hex, sizeof(slot_hex), "%02X", idx);
+      }
+
+      if (col <= 3) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "INST_%s", slot_hex);
+        matched = 1;
+      } else if (col >= 4 && col <= 12) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "TYPE_%s", slot_hex);
+        matched = 1;
+      } else {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                 "NAME_%s", slot_hex);
         matched = 1;
       }
     }
