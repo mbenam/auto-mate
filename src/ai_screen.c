@@ -139,8 +139,8 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h,
 
     // 1. Check for small corner brackets of the M8 cursor (e.g. w <= 4, h <= 4)
     if (w <= 4 && h <= 4) {
-      // If close to active corner cluster and within 150ms, aggregate
-      if (g_cur_min_x >= 0 && (now - g_last_corner_tick < 150) &&
+      // If close to active corner cluster and within 20ms, aggregate
+      if (g_cur_min_x >= 0 && (now - g_last_corner_tick < 20) &&
           abs(px_x - g_cur_min_x) <= 180 && abs(px_y - g_cur_min_y) <= 18) {
         if (px_x < g_cur_min_x) g_cur_min_x = px_x;
         if (px_y < g_cur_min_y) g_cur_min_y = px_y;
@@ -197,11 +197,23 @@ static void str_trim(char *str) {
   while (len > 0 && isspace((unsigned char)str[len - 1])) str[--len] = '\0';
 }
 
-static void extract_token_at(const char *line, int col, char *out_buf, size_t out_len) {
+static void extract_token_at(const char *line, int col, int width, char *out_buf, size_t out_len) {
   out_buf[0] = '\0';
   if (!line || col < 0 || col >= (int)strlen(line)) return;
 
   int len = (int)strlen(line);
+
+  // If width is specified from snap_cursor_to_token, copy that exact range
+  if (width > 1 && col + width <= len + 1) {
+    int copy_len = width;
+    if (col + copy_len > len) copy_len = len - col;
+    if (copy_len > (int)out_len - 1) copy_len = (int)out_len - 1;
+    memcpy(out_buf, line + col, copy_len);
+    out_buf[copy_len] = '\0';
+    str_trim(out_buf);
+    return;
+  }
+
   int c = col;
 
   // If pointing to space, check adjacent characters
@@ -286,24 +298,24 @@ static const m8_static_field_map_s g_field_map[] = {
     {"SONG", 3, 24, 23, 25, "TRACK8"},
 
     // PROJECT Screen
-    {"PROJECT", 3, 5, 13, 24, "TEMPO"},
-    {"PROJECT", 6, 6, 13, 24, "TRANSPOSE"},
-    {"PROJECT", 7, 7, 13, 26, "GROOVE"},
-    {"PROJECT", 8, 9, 13, 28, "SCALE"},
-    {"PROJECT", 10, 11, 13, 28, "LIVE_QUANTIZ"},
-    {"PROJECT", 12, 13, 12, 21, "MIDI_SETTINGS"},
-    {"PROJECT", 12, 13, 22, 32, "MIDI_MAPPINGS"},
-    {"PROJECT", 14, 15, 12, 26, "SONG_NAME"},
-    {"PROJECT", 16, 16, 12, 17, "PROJECT_LOAD"},
-    {"PROJECT", 16, 16, 18, 22, "PROJECT_SAVE"},
-    {"PROJECT", 16, 16, 23, 28, "PROJECT_NEW"},
-    {"PROJECT", 17, 17, 12, 19, "EXPORT_RENDER"},
-    {"PROJECT", 17, 17, 20, 28, "EXPORT_BUNDLE"},
-    {"PROJECT", 18, 18, 12, 20, "CLEAR_PHRASES"},
-    {"PROJECT", 18, 18, 21, 30, "CLEAR_INST_TBL"},
-    {"PROJECT", 19, 20, 12, 30, "VIEW_INST_POOL"},
-    {"PROJECT", 21, 21, 12, 30, "VIEW_TIME_STATS"},
-    {"PROJECT", 22, 23, 12, 30, "SYSTEM_SETTINGS"},
+    {"PROJECT", 5, 6, 12, 24, "TEMPO"},
+    {"PROJECT", 7, 7, 12, 24, "TRANSPOSE"},
+    {"PROJECT", 8, 8, 12, 26, "GROOVE"},
+    {"PROJECT", 10, 10, 12, 28, "SCALE"},
+    {"PROJECT", 11, 11, 12, 28, "LIVE_QUANTIZ"},
+    {"PROJECT", 13, 13, 12, 21, "MIDI_SETTINGS"},
+    {"PROJECT", 13, 13, 22, 32, "MIDI_MAPPINGS"},
+    {"PROJECT", 16, 16, 12, 26, "NAME"},
+    {"PROJECT", 17, 17, 12, 17, "PROJECT_LOAD"},
+    {"PROJECT", 17, 17, 18, 22, "PROJECT_SAVE"},
+    {"PROJECT", 17, 17, 23, 28, "PROJECT_NEW"},
+    {"PROJECT", 18, 18, 12, 19, "EXPORT_RENDER"},
+    {"PROJECT", 18, 18, 20, 28, "EXPORT_BUNDLE"},
+    {"PROJECT", 20, 20, 12, 20, "CLEAR_PHRASES"},
+    {"PROJECT", 20, 20, 21, 30, "CLEAR_INST_TBL"},
+    {"PROJECT", 21, 21, 12, 30, "INST_POOL"},
+    {"PROJECT", 23, 23, 12, 30, "TIME_STATS"},
+    {"PROJECT", 25, 25, 12, 30, "SYSTEM_SETTINGS"},
 
     // TABLE Screen (Steps 00..0F on rows 3..18)
     {"TABLE", 3, 18, 0, 1, "STEP"},
@@ -335,6 +347,52 @@ static void snap_cursor_to_token(int row, int *col, int *width) {
     } else if (c - 1 >= 0 && line[c - 1] != ' ') {
       c = c - 1;
     } else {
+      return;
+    }
+  }
+
+  // Multi-word phrase matches on PROJECT screen
+  if (strstr(line, "VIEW INST.POOL") != NULL && c >= 12 && c <= 28) {
+    const char *p = strstr(line, "VIEW INST.POOL");
+    *col = (int)(p - line);
+    *width = 14;
+    return;
+  }
+  if (strstr(line, "VIEW TIME STATS") != NULL && c >= 12 && c <= 28) {
+    const char *p = strstr(line, "VIEW TIME STATS");
+    *col = (int)(p - line);
+    *width = 15;
+    return;
+  }
+  if (strstr(line, "SCALE") != NULL && c >= 12 && c <= 28) {
+    const char *p = line + 14;
+    while (*p == ' ') p++;
+    int start = (int)(p - line);
+    int end = start;
+    while (end < len && (end < 30) && line[end] != '\0') {
+      if (line[end] == ' ' && line[end+1] == ' ' && line[end+2] == ' ') break;
+      end++;
+    }
+    while (end > start && line[end - 1] == ' ') end--;
+    if (end > start) {
+      *col = start;
+      *width = end - start;
+      return;
+    }
+  }
+  if (strstr(line, "LIVE QUANTIZ") != NULL && c >= 12 && c <= 28) {
+    const char *p = line + 14;
+    while (*p == ' ') p++;
+    int start = (int)(p - line);
+    int end = start;
+    while (end < len && (end < 30) && line[end] != '\0') {
+      if (line[end] == ' ' && line[end+1] == ' ' && line[end+2] == ' ') break;
+      end++;
+    }
+    while (end > start && line[end - 1] == ' ') end--;
+    if (end > start) {
+      *col = start;
+      *width = end - start;
       return;
     }
   }
@@ -431,7 +489,7 @@ static void analyze_screen_state(void) {
     g_screen_state.cursor_col = col;
     g_screen_state.cursor_width = width;
 
-    extract_token_at(g_screen_state.text[row], col, g_screen_state.current_value,
+    extract_token_at(g_screen_state.text[row], col, width, g_screen_state.current_value,
                      sizeof(g_screen_state.current_value));
 
     // Try static UI map first
