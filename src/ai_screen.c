@@ -348,6 +348,26 @@ static const m8_static_field_map_s g_field_map[] = {
     {"MIXER", 26, 26, 12, 16, "INPUT_REVERB"},
     {"MIXER", 26, 26, 18, 22, "USB_REVERB"},
 
+    // EQUALIZER (EQ) Screen (3 Bands: LOW, MID, HIGH)
+    // LOW Band (Cols 6..17)
+    {"EQ", 21, 21, 6, 17, "LOW_GAIN"},
+    {"EQ", 22, 22, 6, 17, "LOW_FREQ"},
+    {"EQ", 23, 23, 6, 17, "LOW_Q"},
+    {"EQ", 25, 25, 6, 17, "LOW_TYPE"},
+    {"EQ", 26, 26, 6, 17, "LOW_MODE"},
+    // MID Band (Cols 18..28)
+    {"EQ", 21, 21, 18, 28, "MID_GAIN"},
+    {"EQ", 22, 22, 18, 28, "MID_FREQ"},
+    {"EQ", 23, 23, 18, 28, "MID_Q"},
+    {"EQ", 25, 25, 18, 28, "MID_TYPE"},
+    {"EQ", 26, 26, 18, 28, "MID_MODE"},
+    // HIGH Band (Cols 29..39)
+    {"EQ", 21, 21, 29, 39, "HIGH_GAIN"},
+    {"EQ", 22, 22, 29, 39, "HIGH_FREQ"},
+    {"EQ", 23, 23, 29, 39, "HIGH_Q"},
+    {"EQ", 25, 25, 29, 39, "HIGH_TYPE"},
+    {"EQ", 26, 26, 29, 39, "HIGH_MODE"},
+
     // TABLE Screen (Steps 00..0F on rows 3..18)
     {"TABLE", 3, 18, 0, 1, "STEP"},
     {"TABLE", 3, 18, 2, 5, "NOTE"},
@@ -489,7 +509,9 @@ static void analyze_screen_state(void) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "EFFECTS");
   } else if (strncmp(header_raw, "PROJECT", 7) == 0) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "PROJECT");
-  } else if (strncmp(header_raw, "MIXER", 5) == 0) {
+  } else if (strstr(header_raw, "EQ") != NULL || strstr(header_raw, "EQUALIZER") != NULL) {
+    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "EQ");
+  } else if (strncmp(header_raw, "MIXER", 5) == 0 || strncmp(header_raw, "MIX", 3) == 0) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "MIXER");
   } else if (strncmp(header_raw, "INST", 4) == 0 || strstr(header_raw, "SYNTH") != NULL ||
              strstr(header_raw, "SAMPLER") != NULL || strstr(header_raw, "WAVSYN") != NULL ||
