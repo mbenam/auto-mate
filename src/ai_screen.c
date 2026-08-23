@@ -62,6 +62,14 @@ void ai_screen_reset(void) {
   if (screen_mutex) SDL_UnlockMutex(screen_mutex);
 }
 
+// Internal state to aggregate cursor corner brackets (TL, TR, BL, BR)
+static int g_cur_min_x = -1;
+static int g_cur_min_y = -1;
+static int g_cur_max_x = -1;
+static int g_cur_max_y = -1;
+static int g_cur_corner_count = 0;
+static Uint64 g_last_corner_tick = 0;
+
 void ai_screen_on_draw_char(int c, int px_x, int px_y,
                             uint8_t fg_r, uint8_t fg_g, uint8_t fg_b,
                             uint8_t bg_r, uint8_t bg_g, uint8_t bg_b) {
@@ -96,7 +104,8 @@ void ai_screen_on_draw_char(int c, int px_x, int px_y,
   g_screen_state.bg_b[row][col] = bg_b;
 
   // Inverted selection highlight detection (e.g. in file browser / name picker modals)
-  if ((bg_r > 50 || bg_g > 50 || bg_b > 50) && px_x < 240) {
+  Uint64 now_char = SDL_GetTicks();
+  if ((bg_r + bg_g + bg_b >= 300) && px_x < 240 && (now_char - g_last_corner_tick >= 100) && col > 1) {
     if (row >= 0 && row < M8_SCREEN_ROWS && col >= 0 && col < M8_SCREEN_COLS) {
       g_screen_state.cursor_col = col;
       g_screen_state.cursor_row = row;
@@ -106,14 +115,6 @@ void ai_screen_on_draw_char(int c, int px_x, int px_y,
 
   if (screen_mutex) SDL_UnlockMutex(screen_mutex);
 }
-
-// Internal state to aggregate cursor corner brackets (TL, TR, BL, BR)
-static int g_cur_min_x = -1;
-static int g_cur_min_y = -1;
-static int g_cur_max_x = -1;
-static int g_cur_max_y = -1;
-static int g_cur_corner_count = 0;
-static Uint64 g_last_corner_tick = 0;
 
 void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t g, uint8_t b) {
   if (!screen_initialized) ai_screen_init();
@@ -160,8 +161,8 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t
 
       // An authentic M8 cursor bracket has multiple corner segments and spans at least 10x7 pixels
       if (g_cur_corner_count >= 3 && (g_cur_max_x - g_cur_min_x) >= 10 && (g_cur_max_y - g_cur_min_y) >= 7) {
-        int col = g_cur_min_x / 8;
-        int row = g_cur_min_y / 8;
+        int col = (g_cur_min_x + 4) / 8;
+        int row = (g_cur_min_y + g_cur_max_y) / 16;
         int cols_wide = (g_cur_max_x - g_cur_min_x + 7) / 8;
         if (cols_wide < 1) cols_wide = 1;
         if (cols_wide > 20) cols_wide = 20;
@@ -176,17 +177,20 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t
     }
     // 2. Check for solid block selection highlights (e.g. in menus / project view)
     else if (w >= 6 && h >= 6 && w <= 220 && h <= 18) {
+      // If a corner bracket cursor was drawn in this frame, step markers at col <= 1 must not override it
       int col = px_x / 8;
       int row = px_y / 8;
       int cols_wide = (w + 7) / 8;
       if (cols_wide < 1) cols_wide = 1;
       if (cols_wide > 20) cols_wide = 20;
 
-      if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
-        g_screen_state.cursor_col = col;
-        g_screen_state.cursor_row = row;
-        g_screen_state.cursor_width = cols_wide;
-        g_screen_state.cursor_height = 1;
+      if ((now - g_last_corner_tick >= 100) || (col > 1)) {
+        if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
+          g_screen_state.cursor_col = col;
+          g_screen_state.cursor_row = row;
+          g_screen_state.cursor_width = cols_wide;
+          g_screen_state.cursor_height = 1;
+        }
       }
     }
   }
