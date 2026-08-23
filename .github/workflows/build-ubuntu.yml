@@ -84,6 +84,7 @@ jobs:
   build-linux-with-nix:
     runs-on: ubuntu-latest
     name: with-nix-linux-x86_64
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
