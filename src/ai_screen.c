@@ -296,25 +296,98 @@ static void extract_token_at(const char *line, int col, int width, char *out_buf
   out_buf[token_len] = '\0';
 }
 
+static void str_clean_punct(char *str) {
+  if (!str) return;
+  size_t len = strlen(str);
+  while (len > 0 && (str[len - 1] == ':' || str[len - 1] == '.' || str[len - 1] == ',' ||
+                     str[len - 1] == '-' || str[len - 1] == '>' || str[len - 1] == '<' ||
+                     str[len - 1] == '?' || str[len - 1] == '!' || str[len - 1] == '=')) {
+    str[--len] = '\0';
+  }
+}
+
 static void extract_left_label(const char *line, int col, char *out_buf, size_t out_len) {
   out_buf[0] = '\0';
   if (!line || col <= 0) return;
 
-  // Scan backwards past current token and spaces
+  // Scan backwards past spaces
   int p = col - 1;
-  while (p >= 0 && line[p] != ' ') p--; // past previous word if cursor was on value
-  while (p >= 0 && line[p] == ' ') p--; // past spaces
-
+  while (p >= 0 && line[p] == ' ') p--;
   if (p < 0) return;
 
-  int end = p + 1;
+  // Read the immediate word to the left
+  int word1_end = p + 1;
   while (p > 0 && line[p - 1] != ' ') p--;
-  int start = p;
+  int word1_start = p;
 
-  int label_len = end - start;
+  // Check if there is another preceding word that forms a compound label
+  // e.g. "LOOP ST", "INST TYPE", "PLAY MODE", "FINE TUNE", "CUT OFF", "MOD RATE", "MOD DEST"
+  int prev_p = word1_start - 1;
+  while (prev_p >= 0 && line[prev_p] == ' ') prev_p--;
+  if (prev_p >= 0) {
+    int word0_end = prev_p + 1;
+    while (prev_p > 0 && line[prev_p - 1] != ' ') prev_p--;
+    int word0_start = prev_p;
+
+    char word0[32] = {0};
+    int len0 = word0_end - word0_start;
+    if (len0 > 0 && len0 < (int)sizeof(word0)) {
+      memcpy(word0, line + word0_start, len0);
+      word0[len0] = '\0';
+      str_trim(word0);
+      str_clean_punct(word0);
+      for (size_t i = 0; i < strlen(word0); i++) word0[i] = (char)toupper((unsigned char)word0[i]);
+
+      if (strcmp(word0, "LOOP") == 0 || strcmp(word0, "INST") == 0 || strcmp(word0, "PLAY") == 0 ||
+          strcmp(word0, "FINE") == 0 || strcmp(word0, "CUT") == 0 || strcmp(word0, "MOD") == 0 ||
+          strcmp(word0, "LIVE") == 0 || strcmp(word0, "MIDI") == 0 || strcmp(word0, "EXP") == 0) {
+        word1_start = word0_start;
+      }
+    }
+  }
+
+  int label_len = word1_end - word1_start;
   if (label_len > (int)out_len - 1) label_len = (int)out_len - 1;
-  memcpy(out_buf, line + start, label_len);
+  memcpy(out_buf, line + word1_start, label_len);
   out_buf[label_len] = '\0';
+  str_trim(out_buf);
+  str_clean_punct(out_buf);
+}
+
+static void standardize_parameter_label(char *label, size_t label_len) {
+  if (!label || strlen(label) == 0) return;
+  str_trim(label);
+  str_clean_punct(label);
+
+  size_t len = strlen(label);
+  for (size_t i = 0; i < len; i++) {
+    label[i] = (char)toupper((unsigned char)label[i]);
+  }
+
+  if (strcmp(label, "SMP") == 0 || strcmp(label, "SAMPLE") == 0) snprintf(label, label_len, "SAMPLE");
+  else if (strcmp(label, "SLC") == 0 || strcmp(label, "SLICE") == 0) snprintf(label, label_len, "SLICE");
+  else if (strcmp(label, "PLY") == 0 || strcmp(label, "PLAY") == 0 || strcmp(label, "PLAY MODE") == 0) snprintf(label, label_len, "PLAY_MODE");
+  else if (strcmp(label, "STA") == 0 || strcmp(label, "START") == 0) snprintf(label, label_len, "START");
+  else if (strcmp(label, "LOOP ST") == 0 || strcmp(label, "LOOPST") == 0 || strcmp(label, "LOOP") == 0 || strcmp(label, "ST") == 0) snprintf(label, label_len, "LOOP_START");
+  else if (strcmp(label, "LEN") == 0 || strcmp(label, "LENGTH") == 0) snprintf(label, label_len, "LENGTH");
+  else if (strcmp(label, "DEG") == 0 || strcmp(label, "DEGRADE") == 0) snprintf(label, label_len, "DEGRADE");
+  else if (strcmp(label, "FIL") == 0 || strcmp(label, "FILTER") == 0) snprintf(label, label_len, "FILTER_TYPE");
+  else if (strcmp(label, "CUT") == 0 || strcmp(label, "CUTOFF") == 0 || strcmp(label, "CUT OFF") == 0) snprintf(label, label_len, "CUTOFF");
+  else if (strcmp(label, "RES") == 0 || strcmp(label, "RESO") == 0 || strcmp(label, "RESONANCE") == 0) snprintf(label, label_len, "RESONANCE");
+  else if (strcmp(label, "VOL") == 0 || strcmp(label, "VOLUME") == 0) snprintf(label, label_len, "VOLUME");
+  else if (strcmp(label, "PAN") == 0) snprintf(label, label_len, "PAN");
+  else if (strcmp(label, "DRY") == 0) snprintf(label, label_len, "DRY");
+  else if (strcmp(label, "CHO") == 0 || strcmp(label, "CHORUS") == 0) snprintf(label, label_len, "CHORUS");
+  else if (strcmp(label, "DEL") == 0 || strcmp(label, "DELAY") == 0) snprintf(label, label_len, "DELAY");
+  else if (strcmp(label, "REV") == 0 || strcmp(label, "REVERB") == 0) snprintf(label, label_len, "REVERB");
+  else if (strcmp(label, "PIT") == 0 || strcmp(label, "PITCH") == 0) snprintf(label, label_len, "PITCH");
+  else if (strcmp(label, "FINE") == 0 || strcmp(label, "FINETUNE") == 0 || strcmp(label, "FINE TUNE") == 0) snprintf(label, label_len, "FINETUNE");
+  else if (strcmp(label, "TRANS") == 0 || strcmp(label, "TRANSP") == 0 || strcmp(label, "TRANSPOSE") == 0) snprintf(label, label_len, "TRANSPOSE");
+  else if (strcmp(label, "TBL") == 0 || strcmp(label, "TABLE") == 0) snprintf(label, label_len, "TABLE");
+  else if (strcmp(label, "INST TYPE") == 0 || strcmp(label, "TYPE") == 0) snprintf(label, label_len, "INST_TYPE");
+  else if (strcmp(label, "NAME") == 0 || strcmp(label, "INST NAME") == 0) snprintf(label, label_len, "NAME");
+  else if (strcmp(label, "AMP") == 0) snprintf(label, label_len, "AMP");
+  else if (strcmp(label, "LIM") == 0 || strcmp(label, "LIMIT") == 0) snprintf(label, label_len, "LIMIT");
 }
 
 // Static UI Field mapping for canonical screens
@@ -1400,6 +1473,57 @@ static void analyze_screen_state(void) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
                  "NAME_%s", slot_hex);
         matched = 1;
+      }
+    }
+
+    // Special Dynamic Screen Matrix: INSTRUMENT (Sampler, Wavsynth, Macro, FMSynth, Hyper, MIDI)
+    else if (strcmp(g_screen_state.active_screen, "INSTRUMENT") == 0) {
+      const char *line = g_screen_state.text[row];
+      // 1. Header row 0: Instrument number (e.g. SAMPLER 00 or INSTRUMENT 00)
+      if (row == 0 && (strstr(line, "SAMPLER") != NULL || strstr(line, "INST") != NULL ||
+                       strstr(line, "WAVSYN") != NULL || strstr(line, "MACRO") != NULL ||
+                       strstr(line, "FMSYN") != NULL || strstr(line, "HYPER") != NULL ||
+                       strstr(line, "MIDI") != NULL)) {
+        if (col >= 5 && col <= 15) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "INST_NUM");
+          matched = 1;
+        }
+      }
+      // 2. Header rows 1..3: TYPE, NAME, TRANSP, TABLE
+      if (!matched && row <= 3) {
+        if (strstr(line, "TYPE") != NULL && col <= 14) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "INST_TYPE");
+          matched = 1;
+        } else if (strstr(line, "NAME") != NULL && col >= 15) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "NAME");
+          matched = 1;
+        } else if ((strstr(line, "TRANS") != NULL || strstr(line, "TRANSP") != NULL) && col <= 14) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "TRANSPOSE");
+          matched = 1;
+        } else if (strstr(line, "TABLE") != NULL && col >= 15) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "TABLE");
+          matched = 1;
+        }
+      }
+
+      // 3. Parameter Rows: Left Label Extraction & Standardization
+      if (!matched) {
+        char left_label[32] = {0};
+        extract_left_label(line, col, left_label, sizeof(left_label));
+        if (strlen(left_label) > 0) {
+          standardize_parameter_label(left_label, sizeof(left_label));
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "%s", left_label);
+          matched = 1;
+        } else {
+          // If cursor landed directly on a parameter label keyword
+          char cur_tok[32] = {0};
+          snprintf(cur_tok, sizeof(cur_tok), "%s", g_screen_state.current_value);
+          standardize_parameter_label(cur_tok, sizeof(cur_tok));
+          if (strlen(cur_tok) > 0 && strcmp(cur_tok, "---") != 0 && !isxdigit((unsigned char)cur_tok[0])) {
+            snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "%s", cur_tok);
+            matched = 1;
+          }
+        }
       }
     }
 
