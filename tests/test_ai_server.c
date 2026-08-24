@@ -1060,6 +1060,22 @@ static void test_virtual_screen_file_browser(void) {
   TEST_ASSERT(strstr(json, "\"screen\":\"FILE_BROWSER\"") != NULL, "Instrument preset loader identified as FILE_BROWSER");
   TEST_ASSERT(strstr(json, "\"input\":\"INSTRUMENT_FILE\"") != NULL, "Input is INSTRUMENT_FILE");
   TEST_ASSERT(strstr(json, "\"value\":\"ACID_BASS.M8I\"") != NULL, "Value is ACID_BASS.M8I");
+
+  // 12. Test Empty Gap Row Snapping (as seen in M8 file browser when cursor lands on row 8/9 with item on row 7/8)
+  ai_screen_reset();
+  feed_text_row(0, 0, "LOAD PROJECT");
+  feed_text_row(5, 0, "/..");
+  feed_text_row(6, 0, "/INSTRUMENTS");
+  feed_text_row(7, 0, "/SAMPLES");
+  // Row 8 is blank gap row
+  feed_text_row(9, 0, "DEMO2.M8S");
+
+  // Cursor placed at col 0, row 8 (the empty gap row), width 9
+  draw_corner_cursor(0, 8, 9);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"FILE_BROWSER\"") != NULL, "Screen is FILE_BROWSER");
+  TEST_ASSERT(strstr(json, "\"input\":\"DIRECTORY_ITEM\"") != NULL, "Empty gap row snaps to DIRECTORY_ITEM");
+  TEST_ASSERT(strstr(json, "\"value\":\"/SAMPLES\"") != NULL, "Empty gap row resolves value to /SAMPLES");
 }
 
 int main(int argc, char *argv[]) {

@@ -167,8 +167,8 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t
 
       // An authentic M8 cursor bracket has multiple corner segments and spans at least 10x7 pixels
       if (g_cur_corner_count >= 3 && (g_cur_max_x - g_cur_min_x) >= 10 && (g_cur_max_y - g_cur_min_y) >= 7) {
-        int col = (g_cur_min_x + 2) / 8;
-        int row = (g_cur_min_y + 2) / 8;
+        int col = (g_cur_min_x + 1) / 8;
+        int row = (g_cur_min_y + 1) / 8;
 
         // Correct for M8 16-pixel hardware bar gap rows (9, 14, 19, 24) on tracker screens
         if (strcmp(g_screen_state.active_screen, "SONG") == 0 ||
@@ -194,7 +194,7 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t
         }
       }
     }
-    // 2. Check for solid block selection highlights (e.g. in menus / project view)
+    // 2. Check for solid block selection highlights (e.g. in menus / project view / file browser)
     else if (w >= 6 && h >= 6 && w <= 220 && h <= 18) {
       // If a corner bracket cursor was drawn in this frame, step markers at col <= 1 must not override it
       int col = px_x / 8;
@@ -203,12 +203,32 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t
       if (cols_wide < 1) cols_wide = 1;
       if (cols_wide > 20) cols_wide = 20;
 
-      if ((now - g_last_corner_tick >= 100) || (col > 1)) {
+      if ((now - g_last_corner_tick >= 100) || (col > 1) ||
+          strcmp(g_screen_state.active_screen, "FILE_BROWSER") == 0) {
         if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
           g_screen_state.cursor_col = col;
           g_screen_state.cursor_row = row;
           g_screen_state.cursor_width = cols_wide;
           g_screen_state.cursor_height = 1;
+        }
+      }
+    }
+    // 3. Clear text cells on background color fills (w >= 8 && h >= 6)
+    else if ((r == 0 && g == 0 && b == 0) ||
+             (r == g_screen_state.bg_theme_r && g == g_screen_state.bg_theme_g && b == g_screen_state.bg_theme_b)) {
+      if (w >= 8 && h >= 6 && px_x < 320 && px_y < 240) {
+        int start_c = px_x / 8;
+        int end_c = (px_x + w + 7) / 8;
+        int start_r = px_y / 8;
+        int end_r = (px_y + h + 7) / 8;
+        if (start_c < 0) start_c = 0;
+        if (end_c > M8_SCREEN_COLS) end_c = M8_SCREEN_COLS;
+        if (start_r < 0) start_r = 0;
+        if (end_r > M8_SCREEN_ROWS) end_r = M8_SCREEN_ROWS;
+        for (int r_idx = start_r; r_idx < end_r; r_idx++) {
+          for (int c_idx = start_c; c_idx < end_c; c_idx++) {
+            g_screen_state.text[r_idx][c_idx] = ' ';
+          }
         }
       }
     }
@@ -422,12 +442,16 @@ static void snap_cursor_to_token(int row, int *col, int *width) {
   int c = *col;
   if (c < 0 || c >= len) return;
 
-  // If pointing at a space, inspect adjacent characters to find the intended token
+  // If pointing at a space, scan adjacent characters to find the intended token on this line
   if (line[c] == ' ') {
-    if (c + 1 < len && line[c + 1] != ' ') {
-      c = c + 1;
-    } else if (c - 1 >= 0 && line[c - 1] != ' ') {
-      c = c - 1;
+    int forward = c;
+    while (forward < len && line[forward] == ' ') forward++;
+    int backward = c;
+    while (backward >= 0 && line[backward] == ' ') backward--;
+    if (forward < len) {
+      c = forward;
+    } else if (backward >= 0) {
+      c = backward;
     } else {
       return;
     }
@@ -825,6 +849,45 @@ static void analyze_screen_state(void) {
   int col = g_screen_state.cursor_col;
   int row = g_screen_state.cursor_row;
   int width = g_screen_state.cursor_width;
+
+  // If cursor landed on an empty row (e.g. inter-line spacing or bottom bracket row),
+  // snap to the adjacent row containing text
+  if (row >= 0 && row < M8_SCREEN_ROWS) {
+    int is_empty_row = 1;
+    for (int i = 0; i < M8_SCREEN_COLS; i++) {
+      if (g_screen_state.text[row][i] != ' ') {
+        is_empty_row = 0;
+        break;
+      }
+    }
+    if (is_empty_row) {
+      if (row > 0) {
+        int prev_has_text = 0;
+        for (int i = 0; i < M8_SCREEN_COLS; i++) {
+          if (g_screen_state.text[row - 1][i] != ' ') {
+            prev_has_text = 1;
+            break;
+          }
+        }
+        if (prev_has_text) {
+          row = row - 1;
+          g_screen_state.cursor_row = row;
+        }
+      } else if (row + 1 < M8_SCREEN_ROWS) {
+        int next_has_text = 0;
+        for (int i = 0; i < M8_SCREEN_COLS; i++) {
+          if (g_screen_state.text[row + 1][i] != ' ') {
+            next_has_text = 1;
+            break;
+          }
+        }
+        if (next_has_text) {
+          row = row + 1;
+          g_screen_state.cursor_row = row;
+        }
+      }
+    }
+  }
 
   if (col >= 0 && col < M8_SCREEN_COLS && row >= 0 && row < M8_SCREEN_ROWS) {
     snap_cursor_to_token(row, &col, &width);
