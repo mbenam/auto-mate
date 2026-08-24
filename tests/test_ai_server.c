@@ -1145,6 +1145,48 @@ static void test_virtual_screen_confirm_dialog(void) {
   TEST_ASSERT(strstr(json, "\"value\":\"NO\"") != NULL, "Value is NO");
 }
 
+static void test_virtual_screen_project(void) {
+  printf("Running test_virtual_screen_project (Project screen fields & full-word token focus)...\n");
+  ai_screen_init();
+  ai_screen_reset();
+
+  feed_text_row(0, 0, "PROJECT");
+  feed_text_row(7, 0, "TEMPO        140.00 <>");
+  feed_text_row(16, 0, "NAME         DEMO02-------");
+  feed_text_row(17, 0, "PROJECT      LOAD SAVE NEW");
+  feed_text_row(18, 0, "EXPORT/SHARE RENDER BUNDLE");
+  feed_text_row(20, 0, "CLEAR UNUSED PHRASES INST/TBL");
+  feed_text_row(21, 0, "INST. POOL   VIEW INST.POOL");
+
+  char json[2048];
+
+  // 1. Test RENDER (col 13, row 18, width 6)
+  draw_corner_cursor(13, 18, 6);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"PROJECT\"") != NULL, "Screen is PROJECT (not KEYBOARD)");
+  TEST_ASSERT(strstr(json, "\"input\":\"EXPORT_RENDER\"") != NULL, "Input is EXPORT_RENDER");
+  TEST_ASSERT(strstr(json, "\"value\":\"RENDER\"") != NULL, "Value is full word RENDER");
+  TEST_ASSERT(strstr(json, "\"cursor_width\":6") != NULL, "Cursor width is 6 for full word");
+
+  // 2. Test BUNDLE (col 20, row 18, width 6)
+  draw_corner_cursor(20, 18, 6);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"EXPORT_BUNDLE\"") != NULL, "Input is EXPORT_BUNDLE");
+  TEST_ASSERT(strstr(json, "\"value\":\"BUNDLE\"") != NULL, "Value is BUNDLE");
+
+  // 3. Test LOAD (col 13, row 17, width 4)
+  draw_corner_cursor(13, 17, 4);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"PROJECT_LOAD\"") != NULL, "Input is PROJECT_LOAD");
+  TEST_ASSERT(strstr(json, "\"value\":\"LOAD\"") != NULL, "Value is LOAD");
+
+  // 4. Test CLEAR UNUSED PHRASES (col 13, row 20, width 7)
+  draw_corner_cursor(13, 20, 7);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"CLEAR_PHRASES\"") != NULL, "Input is CLEAR_PHRASES");
+  TEST_ASSERT(strstr(json, "\"value\":\"PHRASES\"") != NULL, "Value is PHRASES");
+}
+
 int main(int argc, char *argv[]) {
   (void)argc;
   (void)argv;
@@ -1162,6 +1204,7 @@ int main(int argc, char *argv[]) {
   test_virtual_screen_groove();
   test_virtual_screen_scale();
   test_virtual_screen_inst_pool();
+  test_virtual_screen_project();
   test_virtual_screen_file_browser();
   test_virtual_screen_confirm_dialog();
   test_virtual_screen_synth_left_label();

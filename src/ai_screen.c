@@ -875,16 +875,8 @@ static void analyze_screen_state(void) {
     }
   }
 
-  if (is_keyboard) {
-    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "KEYBOARD");
-  } else if (is_confirm_dialog) {
-    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "CONFIRM_DIALOG");
-  } else if (has_dir_entry ||
-             strstr(header_raw, "DIRECTORY") != NULL || strstr(header_raw, "DIR:") != NULL ||
-             strstr(header_raw, "LOAD") != NULL || strstr(header_raw, "SAVE") != NULL ||
-             strstr(header_raw, "IMPORT") != NULL || strstr(header_raw, "EXPORT") != NULL ||
-             strstr(header_raw, "BROWSER") != NULL || strstr(header_raw, "SELECT") != NULL) {
-    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "FILE_BROWSER");
+  if (strncmp(header_raw, "PROJECT", 7) == 0) {
+    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "PROJECT");
   } else if (strncmp(header_raw, "SONG", 4) == 0 || strstr(header_raw, "LIVE") != NULL) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "SONG");
   } else if (strncmp(header_raw, "CHAIN", 5) == 0) {
@@ -899,8 +891,6 @@ static void analyze_screen_state(void) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "SCALE");
   } else if (strncmp(header_raw, "EFFECTS", 7) == 0 || strncmp(header_raw, "FX", 2) == 0) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "EFFECTS");
-  } else if (strncmp(header_raw, "PROJECT", 7) == 0) {
-    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "PROJECT");
   } else if (strstr(header_raw, "EQ") != NULL || strstr(header_raw, "EQUALIZER") != NULL) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "EQ");
   } else if (strncmp(header_raw, "MIXER", 5) == 0 || strncmp(header_raw, "MIX", 3) == 0) {
@@ -916,6 +906,16 @@ static void analyze_screen_state(void) {
              strstr(header_raw, "MACRO") != NULL || strstr(header_raw, "FMSYN") != NULL ||
              strstr(header_raw, "HYPER") != NULL) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "INSTRUMENT");
+  } else if (is_confirm_dialog) {
+    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "CONFIRM_DIALOG");
+  } else if (is_keyboard) {
+    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "KEYBOARD");
+  } else if (has_dir_entry ||
+             strstr(header_raw, "DIRECTORY") != NULL || strstr(header_raw, "DIR:") != NULL ||
+             strstr(header_raw, "LOAD") != NULL || strstr(header_raw, "SAVE") != NULL ||
+             strstr(header_raw, "IMPORT") != NULL || strstr(header_raw, "EXPORT") != NULL ||
+             strstr(header_raw, "BROWSER") != NULL || strstr(header_raw, "SELECT") != NULL) {
+    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "FILE_BROWSER");
   } else {
     // Default to first word of header
     char first_word[32] = {0};
