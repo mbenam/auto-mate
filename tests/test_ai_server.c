@@ -957,6 +957,111 @@ static void test_virtual_screen_inst_pool(void) {
   TEST_ASSERT(all_pool_fields_passed == 1, "All 16 slots x 3 fields (48 fields) on INST_POOL screen accurately resolved");
 }
 
+static void test_virtual_screen_file_browser(void) {
+  printf("Running test_virtual_screen_file_browser (directory traversal & file picker)...\n");
+  ai_screen_init();
+  ai_screen_reset();
+
+  // Draw Header: "DIRECTORY: /SONGS/DEMOS"
+  feed_text_row(0, 0, "DIRECTORY: /SONGS/DEMOS");
+  feed_text_row(2, 0, "  /..");
+  feed_text_row(3, 0, "  /PRESETS");
+  feed_text_row(4, 0, "  /TEMPLATES");
+  feed_text_row(5, 0, "  BEAT_01.M8S");
+  feed_text_row(6, 0, "  SYNTH_LEAD.M8I");
+  feed_text_row(7, 0, "  808_KICK.WAV");
+  feed_text_row(8, 0, "  README.TXT");
+  feed_text_row(10, 0, "  LOAD    CANCEL");
+
+  char json[2048];
+
+  // 1. Test Header Path
+  draw_corner_cursor(11, 0, 12);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"FILE_BROWSER\"") != NULL, "Screen identified as FILE_BROWSER");
+  TEST_ASSERT(strstr(json, "\"input\":\"CURRENT_PATH\"") != NULL, "Header path input is CURRENT_PATH");
+  TEST_ASSERT(strstr(json, "\"value\":\"/SONGS/DEMOS\"") != NULL, "Header path value is /SONGS/DEMOS");
+
+  // 2. Test Parent Directory /..
+  draw_corner_cursor(2, 2, 3);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"PARENT_DIR\"") != NULL, "Input is PARENT_DIR");
+  TEST_ASSERT(strstr(json, "\"value\":\"/..\"") != NULL, "Value is /..");
+
+  // 3. Test Subdirectory /PRESETS
+  draw_corner_cursor(2, 3, 8);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"DIRECTORY_ITEM\"") != NULL, "Input is DIRECTORY_ITEM");
+  TEST_ASSERT(strstr(json, "\"value\":\"/PRESETS\"") != NULL, "Value is /PRESETS");
+
+  // 4. Test Subdirectory /TEMPLATES
+  draw_corner_cursor(2, 4, 10);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"DIRECTORY_ITEM\"") != NULL, "Input is DIRECTORY_ITEM");
+  TEST_ASSERT(strstr(json, "\"value\":\"/TEMPLATES\"") != NULL, "Value is /TEMPLATES");
+
+  // 5. Test Song File BEAT_01.M8S
+  draw_corner_cursor(2, 5, 11);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"SONG_FILE\"") != NULL, "Input is SONG_FILE");
+  TEST_ASSERT(strstr(json, "\"value\":\"BEAT_01.M8S\"") != NULL, "Value is BEAT_01.M8S");
+
+  // 6. Test Instrument File SYNTH_LEAD.M8I
+  draw_corner_cursor(2, 6, 14);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"INSTRUMENT_FILE\"") != NULL, "Input is INSTRUMENT_FILE");
+  TEST_ASSERT(strstr(json, "\"value\":\"SYNTH_LEAD.M8I\"") != NULL, "Value is SYNTH_LEAD.M8I");
+
+  // 7. Test Sample File 808_KICK.WAV
+  draw_corner_cursor(2, 7, 12);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"SAMPLE_FILE\"") != NULL, "Input is SAMPLE_FILE");
+  TEST_ASSERT(strstr(json, "\"value\":\"808_KICK.WAV\"") != NULL, "Value is 808_KICK.WAV");
+
+  // 8. Test Generic File README.TXT
+  draw_corner_cursor(2, 8, 10);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"FILE_ITEM\"") != NULL, "Input is FILE_ITEM");
+  TEST_ASSERT(strstr(json, "\"value\":\"README.TXT\"") != NULL, "Value is README.TXT");
+
+  // 9. Test Action Buttons: LOAD and CANCEL
+  draw_corner_cursor(2, 10, 4);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"LOAD_BTN\"") != NULL, "Button is LOAD_BTN");
+  TEST_ASSERT(strstr(json, "\"value\":\"LOAD\"") != NULL, "Value is LOAD");
+
+  draw_corner_cursor(10, 10, 6);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"CANCEL_BTN\"") != NULL, "Button is CANCEL_BTN");
+  TEST_ASSERT(strstr(json, "\"value\":\"CANCEL\"") != NULL, "Value is CANCEL");
+
+  // 10. Test Sample Browser Context (SAMPLER > SAMPLE: "SELECT SAMPLE" / "DIRECTORY: /SAMPLES/DRUMS")
+  ai_screen_reset();
+  feed_text_row(0, 0, "SELECT SAMPLE");
+  feed_text_row(1, 0, "DIRECTORY: /SAMPLES/DRUMS");
+  feed_text_row(2, 0, "  /..");
+  feed_text_row(3, 0, "  SNARE_909.WAV");
+
+  draw_corner_cursor(2, 3, 13);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"FILE_BROWSER\"") != NULL, "Sample picker identified as FILE_BROWSER");
+  TEST_ASSERT(strstr(json, "\"input\":\"SAMPLE_FILE\"") != NULL, "Input is SAMPLE_FILE");
+  TEST_ASSERT(strstr(json, "\"value\":\"SNARE_909.WAV\"") != NULL, "Value is SNARE_909.WAV");
+
+  // 11. Test Instrument Preset Browser Context (INSTRUMENT > LOAD: "LOAD INSTRUMENT")
+  ai_screen_reset();
+  feed_text_row(0, 0, "LOAD INSTRUMENT");
+  feed_text_row(1, 0, "DIRECTORY: /PRESETS/SYNTHS");
+  feed_text_row(2, 0, "  /..");
+  feed_text_row(3, 0, "  ACID_BASS.M8I");
+
+  draw_corner_cursor(2, 3, 13);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"FILE_BROWSER\"") != NULL, "Instrument preset loader identified as FILE_BROWSER");
+  TEST_ASSERT(strstr(json, "\"input\":\"INSTRUMENT_FILE\"") != NULL, "Input is INSTRUMENT_FILE");
+  TEST_ASSERT(strstr(json, "\"value\":\"ACID_BASS.M8I\"") != NULL, "Value is ACID_BASS.M8I");
+}
+
 int main(int argc, char *argv[]) {
   (void)argc;
   (void)argv;
@@ -974,6 +1079,7 @@ int main(int argc, char *argv[]) {
   test_virtual_screen_groove();
   test_virtual_screen_scale();
   test_virtual_screen_inst_pool();
+  test_virtual_screen_file_browser();
   test_virtual_screen_synth_left_label();
   test_virtual_screen_keyboard();
   test_audio_recording();

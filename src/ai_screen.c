@@ -410,6 +410,9 @@ static const m8_static_field_map_s g_field_map[] = {
     // KEYBOARD / Name Picker
     {"KEYBOARD", 2, 6, 0, 39, "NAME_BUFFER"},
     {"KEYBOARD", 8, 22, 0, 39, "KEY_CHAR"},
+
+    // FILE_BROWSER Header
+    {"FILE_BROWSER", 0, 1, 0, 39, "CURRENT_PATH"},
 };
 
 static void snap_cursor_to_token(int row, int *col, int *width) {
@@ -687,6 +690,30 @@ static void snap_cursor_to_token(int row, int *col, int *width) {
     }
   }
 
+  // FILE_BROWSER Screen (Directory Traversal / File Picker)
+  if (strcmp(g_screen_state.active_screen, "FILE_BROWSER") == 0) {
+    if (row <= 1) {
+      const char *path_pos = strchr(line, '/');
+      if (path_pos != NULL) {
+        int sc = (int)(path_pos - line);
+        int ec = len;
+        while (ec > sc && line[ec - 1] == ' ') ec--;
+        *col = sc;
+        *width = (ec > sc) ? (ec - sc) : 1;
+        return;
+      }
+    }
+    int start = c;
+    int end = c;
+    while (start > 0 && line[start - 1] != ' ') start--;
+    while (end < len && line[end] != ' ') end++;
+    if (end > start) {
+      *col = start;
+      *width = end - start;
+      return;
+    }
+  }
+
   int start = c;
   int end = c;
 
@@ -721,17 +748,37 @@ static void analyze_screen_state(void) {
     snprintf(g_screen_state.play_state, sizeof(g_screen_state.play_state), "STOPPED");
   }
 
-  // Check for Keyboard / Name Picker Modal
-  int is_keyboard = 0;
-  for (int r = 10; r < 25; r++) {
-    if (strstr(g_screen_state.text[r], "SPACE") != NULL || strstr(g_screen_state.text[r], "CANCEL") != NULL) {
-      is_keyboard = 1;
+  // Check for Directory Traversal / File Browser entries on rows 1..12
+  int has_dir_entry = 0;
+  for (int r = 1; r < 12; r++) {
+    const char *line = g_screen_state.text[r];
+    int p = 0;
+    while (line[p] == ' ' && p < 10) p++;
+    if (strstr(line, "/..") != NULL || (line[p] == '/' && line[p + 1] != ' ' && line[p + 1] != '\0')) {
+      has_dir_entry = 1;
       break;
+    }
+  }
+
+  // Check for Keyboard / Name Picker Modal (contains "SPACE" on keyboard grid)
+  int is_keyboard = 0;
+  if (!has_dir_entry && strstr(header_raw, "DIRECTORY") == NULL && strstr(header_raw, "DIR:") == NULL) {
+    for (int r = 10; r < 25; r++) {
+      if (strstr(g_screen_state.text[r], "SPACE") != NULL) {
+        is_keyboard = 1;
+        break;
+      }
     }
   }
 
   if (is_keyboard) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "KEYBOARD");
+  } else if (has_dir_entry ||
+             strstr(header_raw, "DIRECTORY") != NULL || strstr(header_raw, "DIR:") != NULL ||
+             strstr(header_raw, "LOAD") != NULL || strstr(header_raw, "SAVE") != NULL ||
+             strstr(header_raw, "IMPORT") != NULL || strstr(header_raw, "EXPORT") != NULL ||
+             strstr(header_raw, "BROWSER") != NULL || strstr(header_raw, "SELECT") != NULL) {
+    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "FILE_BROWSER");
   } else if (strncmp(header_raw, "SONG", 4) == 0 || strstr(header_raw, "LIVE") != NULL) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "SONG");
   } else if (strncmp(header_raw, "CHAIN", 5) == 0) {
@@ -763,9 +810,6 @@ static void analyze_screen_state(void) {
              strstr(header_raw, "MACRO") != NULL || strstr(header_raw, "FMSYN") != NULL ||
              strstr(header_raw, "HYPER") != NULL) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "INSTRUMENT");
-  } else if (strstr(header_raw, "LOAD") != NULL || strstr(header_raw, "SAVE") != NULL ||
-             strstr(header_raw, "IMPORT") != NULL) {
-    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "FILE_BROWSER");
   } else {
     // Default to first word of header
     char first_word[32] = {0};
@@ -1187,6 +1231,51 @@ static void analyze_screen_state(void) {
         snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input),
                  "NAME_%s", slot_hex);
         matched = 1;
+      }
+    }
+
+    // Special Dynamic Screen Matrix: FILE_BROWSER (Directory Traversal / File Picker)
+    else if (strcmp(g_screen_state.active_screen, "FILE_BROWSER") == 0) {
+      if (row <= 1) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "CURRENT_PATH");
+        matched = 1;
+      } else {
+        const char *val = g_screen_state.current_value;
+        if (strcmp(val, "/..") == 0 || strstr(val, "/..") != NULL) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "PARENT_DIR");
+          matched = 1;
+        } else if (val[0] == '/' || (strlen(val) > 0 && val[strlen(val) - 1] == '/')) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "DIRECTORY_ITEM");
+          matched = 1;
+        } else if (strstr(val, ".M8S") != NULL || strstr(val, ".m8s") != NULL) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "SONG_FILE");
+          matched = 1;
+        } else if (strstr(val, ".M8I") != NULL || strstr(val, ".m8i") != NULL) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "INSTRUMENT_FILE");
+          matched = 1;
+        } else if (strstr(val, ".WAV") != NULL || strstr(val, ".wav") != NULL ||
+                   strstr(val, ".AIF") != NULL || strstr(val, ".aif") != NULL) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "SAMPLE_FILE");
+          matched = 1;
+        } else if (strstr(val, "LOAD") != NULL) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "LOAD_BTN");
+          matched = 1;
+        } else if (strstr(val, "CANCEL") != NULL) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "CANCEL_BTN");
+          matched = 1;
+        } else if (strstr(val, "SELECT") != NULL) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "SELECT_BTN");
+          matched = 1;
+        } else if (strstr(val, "NEW") != NULL) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "NEW_BTN");
+          matched = 1;
+        } else if (strstr(val, "DELETE") != NULL) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "DELETE_BTN");
+          matched = 1;
+        } else {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "FILE_ITEM");
+          matched = 1;
+        }
       }
     }
 
