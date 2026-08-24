@@ -237,6 +237,14 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t
   if (screen_mutex) SDL_UnlockMutex(screen_mutex);
 }
 
+static Uint64 g_last_waveform_tick = 0;
+
+void ai_screen_on_waveform(const uint8_t *data, uint16_t size) {
+  (void)data;
+  (void)size;
+  g_last_waveform_tick = SDL_GetTicks();
+}
+
 static void str_trim(char *str) {
   char *start = str;
   while (isspace((unsigned char)*start)) start++;
@@ -824,8 +832,24 @@ static void analyze_screen_state(void) {
   }
   snprintf(g_screen_state.header_text, sizeof(g_screen_state.header_text), "%s", header_raw);
 
-  // Check play state in header
+  // Check play state: active waveform stream, play arrow glyphs (> / 0x10 / 0x1A), or PLAY keyword
+  Uint64 now = SDL_GetTicks();
+  int is_playing = 0;
+  if (g_last_waveform_tick > 0 && (now - g_last_waveform_tick < 800)) {
+    is_playing = 1;
+  }
   if (strstr(header_raw, ">") != NULL || strstr(header_raw, "PLAY") != NULL) {
+    is_playing = 1;
+  }
+  for (int r = 0; r < M8_SCREEN_ROWS && !is_playing; r++) {
+    const char *line = g_screen_state.text[r];
+    if (strchr(line, '>') != NULL || strstr(line, "T>") != NULL) {
+      is_playing = 1;
+      break;
+    }
+  }
+
+  if (is_playing) {
     snprintf(g_screen_state.play_state, sizeof(g_screen_state.play_state), "PLAYING");
   } else {
     snprintf(g_screen_state.play_state, sizeof(g_screen_state.play_state), "STOPPED");

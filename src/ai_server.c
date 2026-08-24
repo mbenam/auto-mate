@@ -40,10 +40,27 @@ FILE *ai_wav_file = NULL;
 uint32_t wav_data_size = 0;
 static SDL_Mutex *audio_rec_mutex = NULL;
 
+static uint32_t g_audio_sample_rate = 48000;
+static uint16_t g_audio_num_channels = 2;
+static uint16_t g_audio_bit_depth = 32;
+static uint16_t g_audio_is_float = 1;
+
+void ai_server_set_audio_format(uint32_t sample_rate, uint16_t num_channels, uint16_t bit_depth, uint16_t is_float) {
+  if (sample_rate > 0) g_audio_sample_rate = sample_rate;
+  if (num_channels > 0) g_audio_num_channels = num_channels;
+  if (bit_depth > 0) g_audio_bit_depth = bit_depth;
+  g_audio_is_float = is_float ? 1 : 0;
+  ai_log("AUDIO", "Configured WAV recording format: %u Hz, %u-ch, %u-bit (%s)",
+         g_audio_sample_rate, g_audio_num_channels, g_audio_bit_depth,
+         g_audio_is_float ? "IEEE Float" : "PCM");
+}
+
 #ifdef _WIN32
 static HANDLE screenshot_ready_event = NULL;
+static HANDLE key_ready_event = NULL;
 #else
 static SDL_Semaphore *screenshot_ready_event = NULL;
+static SDL_Semaphore *key_ready_event = NULL;
 #endif
 static SDL_Mutex *screenshot_mutex = NULL;
 
@@ -57,13 +74,13 @@ typedef struct {
   uint32_t wav_size;         // Total file size - 8 = 36 + wav_data_size
   char wave_header[4];       // "WAVE"
   char fmt_header[4];        // "fmt "
-  uint32_t fmt_chunk_size;   // 16 for PCM
-  uint16_t audio_format;     // 1 for PCM
+  uint32_t fmt_chunk_size;   // 16 for standard format chunk
+  uint16_t audio_format;     // 3 for IEEE Float, 1 for PCM
   uint16_t num_channels;     // 2 (Stereo)
-  uint32_t sample_rate;      // 44100
-  uint32_t byte_rate;        // sample_rate * num_channels * bits_per_sample / 8 = 176400
-  uint16_t sample_alignment; // num_channels * bits_per_sample / 8 = 4
-  uint16_t bit_depth;        // 16
+  uint32_t sample_rate;      // e.g. 48000 or 44100
+  uint32_t byte_rate;        // sample_rate * sample_alignment
+  uint16_t sample_alignment; // num_channels * (bit_depth / 8)
+  uint16_t bit_depth;        // 32 (Float) or 16 (PCM)
   char data_header[4];       // "data"
   uint32_t data_bytes;       // wav_data_size
 } wav_header_s;
@@ -76,12 +93,12 @@ static void write_wav_header(FILE *f, uint32_t data_len) {
   memcpy(hdr.wave_header, "WAVE", 4);
   memcpy(hdr.fmt_header, "fmt ", 4);
   hdr.fmt_chunk_size = 16;
-  hdr.audio_format = 1; // PCM
-  hdr.num_channels = 2; // Stereo
-  hdr.sample_rate = 44100;
-  hdr.byte_rate = 44100 * 2 * 2;
-  hdr.sample_alignment = 2 * 2;
-  hdr.bit_depth = 16;
+  hdr.audio_format = g_audio_is_float ? 3 : 1; // 3 for IEEE Float, 1 for PCM
+  hdr.num_channels = g_audio_num_channels;
+  hdr.sample_rate = g_audio_sample_rate;
+  hdr.sample_alignment = g_audio_num_channels * (g_audio_bit_depth / 8);
+  hdr.byte_rate = g_audio_sample_rate * hdr.sample_alignment;
+  hdr.bit_depth = g_audio_bit_depth;
   memcpy(hdr.data_header, "data", 4);
   hdr.data_bytes = data_len;
 
@@ -294,6 +311,10 @@ static void handle_client_command(SOCKET client_sock, const char *cmd_line) {
 #endif
 
     if (ok && shared_pixel_buffer) {
+      char header_resp[64];
+      snprintf(header_resp, sizeof(header_resp), "OK SCREENSHOT %d\n", AI_SCREENSHOT_BUFFER_SIZE);
+      send(client_sock, header_resp, (int)strlen(header_resp), 0);
+
       size_t total_sent = 0;
       while (total_sent < AI_SCREENSHOT_BUFFER_SIZE) {
         int n = send(client_sock, (const char *)shared_pixel_buffer + total_sent,
@@ -409,6 +430,29 @@ static void handle_client_command(SOCKET client_sock, const char *cmd_line) {
     return;
   }
 
+  if (strncmp(line, "SETTLE", 6) == 0) {
+    int settle_ms = 50;
+    if (strlen(line) > 6) {
+      int parsed = atoi(cmd_line + 6);
+      if (parsed > 0 && parsed <= 5000) settle_ms = parsed;
+    }
+    SDL_Event event;
+    SDL_zero(event);
+    event.type = AI_INPUT_EVENT;
+    event.user.code = (Sint32)((3 << 24) | ((uint32_t)settle_ms << 8));
+    SDL_PushEvent(&event);
+
+#ifdef _WIN32
+    WaitForSingleObject(key_ready_event, 2000);
+#else
+    SDL_WaitSemaphoreTimeout(key_ready_event, 2000);
+#endif
+    char resp[64];
+    snprintf(resp, sizeof(resp), "OK SETTLE %d\n", settle_ms);
+    send(client_sock, resp, (int)strlen(resp), 0);
+    return;
+  }
+
   if (strncmp(line, "KEY_DOWN ", 9) == 0 || strncmp(line, "KEY_DOWN\t", 9) == 0) {
     const char *keys_part = cmd_line + 9;
     uint8_t bitmask = 0;
@@ -424,6 +468,13 @@ static void handle_client_command(SOCKET client_sock, const char *cmd_line) {
     event.type = AI_INPUT_EVENT;
     event.user.code = (Sint32)((1 << 24) | (uint32_t)bitmask);
     SDL_PushEvent(&event);
+
+#ifdef _WIN32
+    WaitForSingleObject(key_ready_event, 2000);
+#else
+    SDL_WaitSemaphoreTimeout(key_ready_event, 2000);
+#endif
+
     ai_log("KEY", "Held keys down: '%s' -> 0x%02X", keys_part, bitmask);
     char resp[128];
     snprintf(resp, sizeof(resp), "OK KEY_DOWN 0x%02X\n", bitmask);
@@ -443,6 +494,13 @@ static void handle_client_command(SOCKET client_sock, const char *cmd_line) {
     event.type = AI_INPUT_EVENT;
     event.user.code = (Sint32)((2 << 24) | (uint32_t)bitmask);
     SDL_PushEvent(&event);
+
+#ifdef _WIN32
+    WaitForSingleObject(key_ready_event, 2000);
+#else
+    SDL_WaitSemaphoreTimeout(key_ready_event, 2000);
+#endif
+
     ai_log("KEY", "Released keys (mask 0x%02X)", bitmask);
     char resp[128];
     snprintf(resp, sizeof(resp), "OK KEY_UP 0x%02X\n", bitmask);
@@ -490,9 +548,16 @@ static void handle_client_command(SOCKET client_sock, const char *cmd_line) {
       return;
     }
 
+    // Wait for key cycle + release debounce to settle on hardware
+#ifdef _WIN32
+    WaitForSingleObject(key_ready_event, 2000);
+#else
+    SDL_WaitSemaphoreTimeout(key_ready_event, 2000);
+#endif
+
     ai_log("KEY", "Injected key command: '%s' -> 0x%02X (%dms)", keys_copy, bitmask, duration_ms);
     char resp[128];
-    snprintf(resp, sizeof(resp), "OK KEY 0x%02X %dms\n", bitmask, duration_ms);
+    snprintf(resp, sizeof(resp), "OK KEY 0x%02X\n", bitmask);
     send(client_sock, resp, (int)strlen(resp), 0);
     return;
   }
@@ -615,9 +680,15 @@ int ai_server_init(void) {
   if (screenshot_ready_event == NULL) {
     screenshot_ready_event = CreateEvent(NULL, FALSE, FALSE, NULL);
   }
+  if (key_ready_event == NULL) {
+    key_ready_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+  }
 #else
   if (screenshot_ready_event == NULL) {
     screenshot_ready_event = SDL_CreateSemaphore(0);
+  }
+  if (key_ready_event == NULL) {
+    key_ready_event = SDL_CreateSemaphore(0);
   }
 #endif
 
@@ -640,10 +711,7 @@ int ai_server_init(void) {
 
   listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (listen_sock == INVALID_SOCKET) {
-    ai_log("SYS", "Failed to create AI server socket");
-#ifdef _WIN32
-    WSACleanup();
-#endif
+    ai_log("SYS", "Failed to create AI TCP socket");
     return 0;
   }
 
@@ -657,7 +725,7 @@ int ai_server_init(void) {
   server_addr.sin_port = htons(AI_SERVER_PORT);
 
   if (bind(listen_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
-    ai_log("SYS", "Failed to bind AI server socket to %s:%d", AI_SERVER_HOST, AI_SERVER_PORT);
+    ai_log("SYS", "Failed to bind AI TCP server to %s:%d", AI_SERVER_HOST, AI_SERVER_PORT);
     closesocket(listen_sock);
     listen_sock = INVALID_SOCKET;
 #ifdef _WIN32
@@ -666,8 +734,8 @@ int ai_server_init(void) {
     return 0;
   }
 
-  if (listen(listen_sock, 4) == SOCKET_ERROR) {
-    ai_log("SYS", "Failed to listen on AI server socket");
+  if (listen(listen_sock, 5) == SOCKET_ERROR) {
+    ai_log("SYS", "Failed to listen on AI TCP socket");
     closesocket(listen_sock);
     listen_sock = INVALID_SOCKET;
 #ifdef _WIN32
@@ -717,11 +785,19 @@ void ai_server_shutdown(void) {
     CloseHandle(screenshot_ready_event);
     screenshot_ready_event = NULL;
   }
+  if (key_ready_event) {
+    CloseHandle(key_ready_event);
+    key_ready_event = NULL;
+  }
   WSACleanup();
 #else
   if (screenshot_ready_event) {
     SDL_DestroySemaphore(screenshot_ready_event);
     screenshot_ready_event = NULL;
+  }
+  if (key_ready_event) {
+    SDL_DestroySemaphore(key_ready_event);
+    key_ready_event = NULL;
   }
 #endif
 
@@ -755,7 +831,7 @@ void ai_server_handle_event(struct app_context *ctx, const SDL_Event *event) {
       // Hold down
       g_persistent_key_mask |= bitmask;
       ai_log("KEY", "Hold down key mask 0x%02X (active: 0x%02X)", bitmask, g_persistent_key_mask);
-      if (ctx->device_connected) {
+      if (ctx && ctx->device_connected) {
         m8_send_msg_controller(g_persistent_key_mask);
       }
     } else if (mode == 2) {
@@ -766,20 +842,36 @@ void ai_server_handle_event(struct app_context *ctx, const SDL_Event *event) {
         g_persistent_key_mask &= ~bitmask;
       }
       ai_log("KEY", "Release keys (remaining active: 0x%02X)", g_persistent_key_mask);
-      if (ctx->device_connected) {
+      if (ctx && ctx->device_connected) {
         m8_send_msg_controller(g_persistent_key_mask);
+        SDL_Delay(15);
       }
+    } else if (mode == 3) {
+      // Settle wait fence
+      SDL_Delay(duration);
     } else {
-      // Normal pulse with duration
+      // Normal pulse with duration + release settle debounce
       uint8_t combined = g_persistent_key_mask | bitmask;
       ai_log("KEY", "Pulse keystroke bitmask 0x%02X (%dms)", combined, duration);
 
-      if (ctx->device_connected) {
+      if (ctx && ctx->device_connected) {
         m8_send_msg_controller(combined);
         SDL_Delay(duration);
         m8_send_msg_controller(g_persistent_key_mask);
+        // Essential 25ms release settle pause to prevent M8 hardware auto-repeat over-travel
+        SDL_Delay(25);
       }
     }
+
+#ifdef _WIN32
+    if (key_ready_event) {
+      SetEvent(key_ready_event);
+    }
+#else
+    if (key_ready_event) {
+      SDL_SignalSemaphore(key_ready_event);
+    }
+#endif
   }
 }
 

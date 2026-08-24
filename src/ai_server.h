@@ -41,6 +41,7 @@ extern uint32_t wav_data_size;
 int ai_server_rec_start(const char *filename);
 int ai_server_rec_stop(uint32_t *out_size);
 void ai_server_record_audio(const void *audio_buffer, size_t byte_count);
+void ai_server_set_audio_format(uint32_t sample_rate, uint16_t num_channels, uint16_t bit_depth, uint16_t is_float);
 
 // Parse key string into bitmask (public for testing)
 int ai_server_parse_key_combination(const char *input, uint8_t *out_mask, char *err_buf, size_t err_buf_len);

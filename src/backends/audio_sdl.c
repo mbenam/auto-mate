@@ -197,6 +197,13 @@ int audio_initialize(const char *output_device_name, const unsigned int audio_bu
   SDL_ResumeAudioStreamDevice(audio_stream_out);
   SDL_ResumeAudioStreamDevice(audio_stream_in);
 
+  ai_server_set_audio_format(
+      (uint32_t)audio_spec_out.freq,
+      (uint16_t)audio_spec_out.channels,
+      (uint16_t)SDL_AUDIO_BITSIZE(audio_spec_out.format),
+      SDL_AUDIO_ISFLOAT(audio_spec_out.format) ? 1 : 0
+  );
+
   audio_paused = 0;
   audio_initialized = 1;
 

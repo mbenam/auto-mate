@@ -139,6 +139,7 @@ int process_command(const uint8_t *recv_buf, uint32_t size) {
     osccmd.waveform_size = (size & UINT16_MAX) - 4;
 
     draw_waveform(&osccmd);
+    ai_screen_on_waveform(osccmd.waveform, osccmd.waveform_size);
     return 1;
   }
 

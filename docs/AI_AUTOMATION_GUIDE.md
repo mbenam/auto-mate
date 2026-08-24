@@ -126,12 +126,13 @@ m8c.exe --headless --audio --log session.log
 | **`GET_STATE`** | None | `OK STATE <json_object>\n` | Returns full screen state, cursor position, active field, value, and play state. |
 | **`GET_CURSOR`** | None | `OK CURSOR <col> <row> <input_name>\n` | Returns current cursor grid coordinates and resolved input field name. |
 | **`GET_TEXT_SCREEN`** | `[MARKED]` | `OK TEXT_SCREEN 30\n` + 30 lines | Dumps the full $40 \times 30$ ASCII screen grid. `MARKED` adds `[ ]` brackets at cursor. |
-| **`KEY`** | `<combo>` | `OK KEY <hex_mask> <duration>ms\n` | Injects a standard keystroke pulse (default: 30ms hold). |
+| **`KEY`** | `<combo>` | `OK KEY <hex_mask>\n` | Injects a synchronous keystroke pulse (30ms hold + 25ms release settle debounce). |
 | **`KEY_DOWN`** | `<combo>` | `OK KEY_DOWN <hex_mask>\n` | Holds down specified keys continuously until released. |
 | **`KEY_UP`** | `[combo]` | `OK KEY_UP <hex_mask>\n` | Releases specified keys (or all keys if no argument given). |
-| **`KEY_PRESS`** | `<combo> [ms]` | `OK KEY_PRESS <hex_mask> <ms>\n` | Pulses keys with a custom duration in milliseconds. |
+| **`KEY_PRESS`** | `<combo> [ms]` | `OK KEY <hex_mask>\n` | Pulses keys with a custom duration in milliseconds. |
+| **`SETTLE`** | `[ms]` | `OK SETTLE <ms>\n` | Explicit frame settle fence (default: 50ms) to ensure display redraw before read. |
 | **`SCREENSHOT`** | None | `OK SCREENSHOT 230400\n` + binary bytes | Captures 230,400 raw RGB24 bytes (320x240 resolution). |
-| **`REC_START`** | `<filepath.wav>` | `OK REC_START <filepath>\n` | Intercepts USB audio stream and begins writing 44.1kHz 16-bit stereo WAV. |
+| **`REC_START`** | `<filepath.wav>` | `OK REC_START <filepath>\n` | Intercepts USB audio stream and writes matching WAV (48kHz float32 or 44.1kHz PCM). |
 | **`REC_STOP`** | None | `OK REC_STOP <byte_count>\n` | Finalizes WAV header with exact byte length and closes file. |
 | **`LOGS`** | `[count]` | `OK LOGS <n>\n` + $n$ log lines | Returns recent in-memory log entries from circular buffer. |
 
@@ -154,21 +155,23 @@ Returns a compact single-line JSON object representing the entire screen state:
   "cursor_text_line": "00 [C-4] FF 01 VOL 80 --- -- --- --"
 }
 ```
+`play_state` accurately detects real-time playback via M8 live oscilloscope waveform packet streaming (`0xFC`) and transport glyphs (`T>140`, `>`).
 
-#### 2. `KEY <combo>`
-Simulates simultaneous button presses. Combinations can be separated by `+`, `,`, or `|`.
+#### 2. `KEY <combo>` & `SETTLE`
+Simulates simultaneous button presses with synchronous hardware settle fences. Combinations can be separated by `+`, `,`, or `|`.
 - Valid keys: `UP`, `DOWN`, `LEFT`, `RIGHT`, `EDIT`, `OPTION` (or `OPT`), `SHIFT` (or `SELECT`), `PLAY` (or `START`).
 - Examples: `KEY UP`, `KEY SHIFT+PLAY`, `KEY EDIT+UP`, `KEY OPTION+LEFT`.
+- `KEY` pulses the key down for 30ms, releases the key, and pauses for a 25ms debounce interval before returning `OK KEY`. This eliminates hardware auto-repeat over-travel and guarantees that subsequent `GET_STATE` queries read the newly settled state.
 
 #### 3. `SCREENSHOT`
-Transmits an exact 230,400-byte raw RGB frame buffer directly from SDL's intermediate render target:
+Transmits a text header `OK SCREENSHOT 230400\n` followed immediately by the 230,400-byte raw RGB frame buffer directly from SDL's intermediate render target:
 $$\text{Payload Size} = 320 \times 240 \times 3 \text{ bytes (RGB24)} = 230,400 \text{ bytes}$$
 
 #### 4. `REC_START <filepath>` / `REC_STOP`
-Captures raw PCM audio passing through the SDL stream:
-- **Sample Rate**: 44,100 Hz
+Captures audio passing through the SDL stream into a compliant standard WAV file:
+- **Sample Rate**: Matches native output device (typically 48,000 Hz or 44,100 Hz).
 - **Channels**: 2 (Stereo)
-- **Bit Depth**: 16-bit Signed Integer (Little-Endian)
+- **Format**: IEEE 32-bit Float (`WAVE_FORMAT_IEEE_FLOAT`) or 16-bit Integer PCM.
 - **Header**: Standard 44-byte RIFF/WAVE header finalized on `REC_STOP`.
 
 ---
@@ -677,17 +680,27 @@ def record_and_verify(duration=4.0, output_wav="m8_live_recording.wav"):
             rate = wf.getframerate()
             frames = wf.getnframes()
             raw_bytes = wf.readframes(frames)
-            total_samples = len(raw_bytes) // 2
-            samples = struct.unpack(f"<{total_samples}h", raw_bytes) if total_samples > 0 else []
-            nonzero = sum(1 for s in samples if s != 0)
+            
+            if width == 4:
+                # 32-bit IEEE Float
+                total_samples = len(raw_bytes) // 4
+                samples = struct.unpack(f"<{total_samples}f", raw_bytes) if total_samples > 0 else []
+                fmt_name = "32-bit IEEE Float"
+            else:
+                # 16-bit Integer PCM
+                total_samples = len(raw_bytes) // 2
+                samples = struct.unpack(f"<{total_samples}h", raw_bytes) if total_samples > 0 else []
+                fmt_name = "16-bit PCM"
+                
+            nonzero = sum(1 for s in samples if abs(s) > 1e-5)
 
             print("\n" + "=" * 50)
             print("         AUDIO RECORDING REPORT")
             print("=" * 50)
             print(f" File:       {output_wav}")
             print(f" Duration:   {frames / rate:.2f} seconds")
-            print(f" Format:     {rate} Hz, {channels} Channels, {width*8}-bit PCM")
-            print(f" Min/Max:    [{min(samples) if samples else 0}, {max(samples) if samples else 0}]")
+            print(f" Format:     {rate} Hz, {channels} Channels, {fmt_name}")
+            print(f" Min/Max:    [{min(samples):.4f}, {max(samples):.4f}]" if (samples and width==4) else f" Min/Max:    [{min(samples)}, {max(samples)}]")
             print(f" Non-Zero:   {nonzero:,} / {total_samples:,} ({nonzero*100.0/max(1,total_samples):.1f}%)")
             print("=" * 50 + "\n")
 

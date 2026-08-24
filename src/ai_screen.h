@@ -56,6 +56,9 @@ void ai_screen_on_draw_char(int c, int px_x, int px_y,
 void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h,
                             uint8_t r, uint8_t g, uint8_t b);
 
+// Intercept DRAW OSCILLOSCOPE WAVEFORM command from M8 SLIP stream
+void ai_screen_on_waveform(const uint8_t *data, uint16_t size);
+
 // Get current state formatted as rich JSON for LLM / AI agent consumption
 int ai_screen_get_state_json(char *out_buf, size_t out_len);
 

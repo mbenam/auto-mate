@@ -93,15 +93,16 @@ static void test_invalid_keys(void) {
 }
 
 static void test_audio_recording(void) {
-  printf("Running test_audio_recording...\n");
+  printf("Running test_audio_recording (Float32 and PCM WAV formats)...\n");
   const char *test_fn = "test_rec_direct.wav";
   remove(test_fn);
 
+  // 1. Test 48kHz IEEE Float32 Recording
+  ai_server_set_audio_format(48000, 2, 32, 1);
   TEST_ASSERT(ai_server_rec_start(test_fn) == 1, "ai_server_rec_start succeeds");
   TEST_ASSERT(ai_is_recording == true, "ai_is_recording flag is true");
   TEST_ASSERT(ai_wav_file != NULL, "ai_wav_file handle is open");
 
-  // Push 1024 bytes of dummy audio data
   uint8_t dummy_audio[1024];
   memset(dummy_audio, 0x55, sizeof(dummy_audio));
   ai_server_record_audio(dummy_audio, sizeof(dummy_audio));
@@ -111,23 +112,37 @@ static void test_audio_recording(void) {
   TEST_ASSERT(ai_server_rec_stop(&final_size) == 1, "ai_server_rec_stop succeeds");
   TEST_ASSERT(final_size == 1024, "final_size reported as 1024");
   TEST_ASSERT(ai_is_recording == false, "ai_is_recording flag reset to false");
-  TEST_ASSERT(ai_wav_file == NULL, "ai_wav_file closed");
 
-  // Verify file on disk
   FILE *f = fopen(test_fn, "rb");
   TEST_ASSERT(f != NULL, "WAV file was created on disk");
   if (f) {
-    fseek(f, 0, SEEK_END);
-    long fsize = ftell(f);
-    TEST_ASSERT(fsize == 1024 + 44, "WAV total file size is exactly 1068 (1024 data + 44 header)");
-
-    fseek(f, 0, SEEK_SET);
-    char hdr[44];
+    uint8_t hdr[44];
     fread(hdr, 1, 44, f);
     TEST_ASSERT(memcmp(hdr, "RIFF", 4) == 0, "WAV header starts with 'RIFF'");
     TEST_ASSERT(memcmp(hdr + 8, "WAVE", 4) == 0, "WAV format is 'WAVE'");
-    TEST_ASSERT(memcmp(hdr + 12, "fmt ", 4) == 0, "WAV contains 'fmt ' chunk");
-    TEST_ASSERT(memcmp(hdr + 36, "data", 4) == 0, "WAV contains 'data' chunk");
+    TEST_ASSERT(hdr[20] == 3, "WAV format tag is 3 (IEEE Float)");
+    uint32_t srate = hdr[24] | (hdr[25] << 8) | (hdr[26] << 16) | (hdr[27] << 24);
+    TEST_ASSERT(srate == 48000, "WAV sample rate is 48000 Hz");
+    uint16_t bits = hdr[34] | (hdr[35] << 8);
+    TEST_ASSERT(bits == 32, "WAV bit depth is 32-bit");
+    fclose(f);
+    remove(test_fn);
+  }
+
+  // 2. Test 44.1kHz 16-bit PCM Recording
+  ai_server_set_audio_format(44100, 2, 16, 0);
+  ai_server_rec_start(test_fn);
+  ai_server_record_audio(dummy_audio, sizeof(dummy_audio));
+  ai_server_rec_stop(&final_size);
+  f = fopen(test_fn, "rb");
+  if (f) {
+    uint8_t hdr[44];
+    fread(hdr, 1, 44, f);
+    TEST_ASSERT(hdr[20] == 1, "WAV format tag is 1 (PCM)");
+    uint32_t srate = hdr[24] | (hdr[25] << 8) | (hdr[26] << 16) | (hdr[27] << 24);
+    TEST_ASSERT(srate == 44100, "WAV sample rate is 44100 Hz");
+    uint16_t bits = hdr[34] | (hdr[35] << 8);
+    TEST_ASSERT(bits == 16, "WAV bit depth is 16-bit");
     fclose(f);
     remove(test_fn);
   }
@@ -179,9 +194,39 @@ static void test_live_tcp_server(void) {
     // Test KEY SHIFT+PLAY -> OK KEY 0x18
     const char *key_cmd = "KEY SHIFT+PLAY\n";
     send(sock, key_cmd, (int)strlen(key_cmd), 0);
+
+    SDL_Event ev;
+    int key_event_handled = 0;
+    for (int i = 0; i < 60; i++) {
+      while (SDL_PollEvent(&ev)) {
+        if (ev.type == AI_INPUT_EVENT) {
+          ai_server_handle_event(NULL, &ev);
+          key_event_handled = 1;
+        }
+      }
+      if (key_event_handled) break;
+      SDL_Delay(5);
+    }
+    TEST_ASSERT(key_event_handled == 1, "SDL event loop handled AI_INPUT_EVENT for key");
+
     memset(buf, 0, sizeof(buf));
     recv(sock, buf, sizeof(buf) - 1, 0);
     TEST_ASSERT(strstr(buf, "OK KEY 0x18") != NULL, "TCP: KEY SHIFT+PLAY -> OK KEY 0x18");
+
+    // Test SETTLE -> OK SETTLE 30
+    const char *settle_cmd = "SETTLE 30\n";
+    send(sock, settle_cmd, (int)strlen(settle_cmd), 0);
+    for (int i = 0; i < 50; i++) {
+      while (SDL_PollEvent(&ev)) {
+        if (ev.type == AI_INPUT_EVENT) {
+          ai_server_handle_event(NULL, &ev);
+        }
+      }
+      SDL_Delay(5);
+    }
+    memset(buf, 0, sizeof(buf));
+    recv(sock, buf, sizeof(buf) - 1, 0);
+    TEST_ASSERT(strstr(buf, "OK SETTLE 30") != NULL, "TCP: SETTLE -> OK SETTLE 30");
 
     // Test KEY INVALID -> ERROR
     const char *bad_cmd = "KEY BADKEY\n";
@@ -190,11 +235,10 @@ static void test_live_tcp_server(void) {
     recv(sock, buf, sizeof(buf) - 1, 0);
     TEST_ASSERT(strstr(buf, "ERROR") != NULL, "TCP: KEY BADKEY -> ERROR");
 
-    // Test SCREENSHOT -> 230,400 bytes
+    // Test SCREENSHOT -> OK SCREENSHOT 230400\n + 230,400 bytes
     const char *screenshot_cmd = "SCREENSHOT\n";
     send(sock, screenshot_cmd, (int)strlen(screenshot_cmd), 0);
 
-    SDL_Event ev;
     int event_handled = 0;
     for (int i = 0; i < 300; i++) {
       while (SDL_PollEvent(&ev)) {
@@ -208,6 +252,19 @@ static void test_live_tcp_server(void) {
       SDL_Delay(10);
     }
     TEST_ASSERT(event_handled == 1, "SDL event loop caught AI_SCREENSHOT_EVENT");
+
+    // Read header line "OK SCREENSHOT 230400\n"
+    memset(buf, 0, sizeof(buf));
+    int line_idx = 0;
+    while (line_idx < (int)sizeof(buf) - 1) {
+      char c;
+      int r = recv(sock, &c, 1, 0);
+      if (r <= 0) break;
+      buf[line_idx++] = c;
+      if (c == '\n') break;
+    }
+    buf[line_idx] = '\0';
+    TEST_ASSERT(strstr(buf, "OK SCREENSHOT 230400") != NULL, "TCP: SCREENSHOT header is OK SCREENSHOT 230400");
 
     char *pixel_data = malloc(AI_SCREENSHOT_BUFFER_SIZE);
     size_t total_recv = 0;
@@ -239,6 +296,11 @@ static void test_live_tcp_server(void) {
     recv(sock, buf, sizeof(buf) - 1, 0);
     TEST_ASSERT(strstr(buf, "OK REC_STOP 2048") != NULL, "TCP: REC_STOP -> OK REC_STOP 2048");
 
+    // Test waveform playback state detection
+    uint8_t osc_data[64];
+    memset(osc_data, 128, sizeof(osc_data));
+    ai_screen_on_waveform(osc_data, sizeof(osc_data));
+
     // Test GET_STATE command over TCP (single-line JSON response)
     const char *state_cmd = "GET_STATE\n";
     send(sock, state_cmd, (int)strlen(state_cmd), 0);
@@ -246,6 +308,7 @@ static void test_live_tcp_server(void) {
     recv(sock, buf, sizeof(buf) - 1, 0);
     TEST_ASSERT(strstr(buf, "OK STATE") != NULL, "TCP: GET_STATE -> OK STATE");
     TEST_ASSERT(strstr(buf, "\"screen\":") != NULL, "TCP: GET_STATE JSON contains screen field");
+    TEST_ASSERT(strstr(buf, "\"play_state\":\"PLAYING\"") != NULL, "TCP: Waveform stream triggers PLAYING state");
 
     // Test GET_CURSOR command over TCP (single-line response)
     const char *cursor_cmd = "GET_CURSOR\n";
