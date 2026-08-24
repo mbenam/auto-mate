@@ -399,26 +399,6 @@ static void test_virtual_screen_synth_left_label(void) {
   TEST_ASSERT(strstr(json, "\"value\":\"40\"") != NULL, "Current value is 40");
 }
 
-static void test_virtual_screen_keyboard(void) {
-  printf("Running test_virtual_screen_keyboard...\n");
-  ai_screen_init();
-  ai_screen_reset();
-
-  // Draw Name picker modal
-  feed_text_row(0, 0, "NAME INSTRUMENT");
-  feed_text_row(3, 2, "SYNTH_LEAD");
-  feed_text_row(12, 4, "A B C D E F G H I J");
-  feed_text_row(18, 4, "SPACE  OK  CANCEL");
-
-  // Cursor on "OK" at (col 11, row 18)
-  ai_screen_on_draw_rect(11 * 8, 18 * 8, 16, 8, 0, 255, 0);
-
-  char json[2048];
-  ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"screen\":\"KEYBOARD\"") != NULL, "Modal identified as KEYBOARD");
-  TEST_ASSERT(strstr(json, "\"value\":\"OK\"") != NULL, "Current value is OK");
-}
-
 static void draw_corner_cursor(int col, int row, int width_chars) {
   int x = col * 8;
   int y = row * 8;
@@ -428,6 +408,51 @@ static void draw_corner_cursor(int col, int row, int width_chars) {
   ai_screen_on_draw_rect(x + w - 2, y, 2, 2, 0, 255, 255);
   ai_screen_on_draw_rect(x, y + h - 2, 2, 2, 0, 255, 255);
   ai_screen_on_draw_rect(x + w - 2, y + h - 2, 2, 2, 0, 255, 255);
+}
+
+static void test_virtual_screen_keyboard(void) {
+  printf("Running test_virtual_screen_keyboard (character picker & name editing)...\n");
+  ai_screen_init();
+  ai_screen_reset();
+
+  // Draw Name picker modal
+  feed_text_row(0, 0, "NAME INSTRUMENT");
+  feed_text_row(3, 2, "SYNTH_LEAD");
+  feed_text_row(12, 4, "A B C D E F G H I J");
+  feed_text_row(18, 4, "SPACE  OK  CANCEL");
+
+  char json[2048];
+
+  // 1. Test Name Buffer row
+  draw_corner_cursor(2, 3, 10);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"KEYBOARD\"") != NULL, "Modal identified as KEYBOARD");
+  TEST_ASSERT(strstr(json, "\"input\":\"NAME_BUFFER\"") != NULL, "Input is NAME_BUFFER");
+  TEST_ASSERT(strstr(json, "\"value\":\"SYNTH_LEAD\"") != NULL, "Buffer value is SYNTH_LEAD");
+
+  // 2. Test Letter in Character Picker Grid ('D' at col 10, row 12)
+  draw_corner_cursor(10, 12, 1);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"PICKER_CHAR\"") != NULL, "Input is PICKER_CHAR");
+  TEST_ASSERT(strstr(json, "\"value\":\"D\"") != NULL, "Focused character is D");
+
+  // 3. Test SPACE button
+  draw_corner_cursor(4, 18, 5);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"SPACE_BTN\"") != NULL, "Input is SPACE_BTN");
+  TEST_ASSERT(strstr(json, "\"value\":\"SPACE\"") != NULL, "Button value is SPACE");
+
+  // 4. Test OK button
+  draw_corner_cursor(11, 18, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OK_BTN\"") != NULL, "Input is OK_BTN");
+  TEST_ASSERT(strstr(json, "\"value\":\"OK\"") != NULL, "Button value is OK");
+
+  // 5. Test CANCEL button
+  draw_corner_cursor(15, 18, 6);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"CANCEL_BTN\"") != NULL, "Input is CANCEL_BTN");
+  TEST_ASSERT(strstr(json, "\"value\":\"CANCEL\"") != NULL, "Button value is CANCEL");
 }
 
 static int table_step_to_row(int step) {

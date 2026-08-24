@@ -206,7 +206,7 @@ The table below outlines the standardized field identifiers returned in `input` 
 | **`INST_POOL`** | `INST_<XX>`, `TYPE_<XX>`, `NAME_<XX>` | Overview list of all project instrument slots (`00`..`FF`) displaying slot index, engine/source type (`WAVSYN`, `MACRO`, `SAMPLER`, `FMSYN`, `HYPER`, `MIDI`), and custom patch name. |
 | **`GROOVE`** | `STEP_<XX>`, `TICKS_<XX>`, `GROOVE_NUM` | 16 Groove step tick assignments (`00`..`0F`) for custom swing/shuffle and time signature manipulation, plus header groove index. |
 | **`SCALE`** | `NOTE_<XX>`, `ENABLE_<XX>`, `OFFSET_<XX>`, `SCALE_NUM`, `KEY`, `NAME` | 12 Note interval configurations (`00`..`0B` for C through B) with note name, enable status, microtonal offset, plus root key, preset name, and scale index. |
-| **`KEYBOARD`** | `NAME_BUFFER`, `KEY_CHAR` | Interactive text entry dialog. |
+| **`KEYBOARD`** | `NAME_BUFFER`, `PICKER_CHAR`, `KEY_CHAR`, `SPACE_BTN`, `OK_BTN`, `CANCEL_BTN`, `CLEAR_BTN`, `DELETE_BTN` | Interactive text entry and character picker overlay. Captures active name buffer string, individually focused grid characters (`PICKER_CHAR`), and action buttons. |
 | **`FILE_BROWSER`** | `CURRENT_PATH`, `PARENT_DIR`, `DIRECTORY_ITEM`, `SONG_FILE`, `INSTRUMENT_FILE`, `SAMPLE_FILE`, `FILE_ITEM`, `LOAD_BTN`, `CANCEL_BTN`, `SELECT_BTN`, `NEW_BTN`, `DELETE_BTN` | Directory traversal, project loading (`PROJECT > LOAD`), sample browsing, and preset management with directory paths, file categorization, and modal action buttons. |
 | **Synth & FX Pages** | Dynamic Left-Label (e.g. `CUTOFF`, `RES`, `VOLUME`, `PITCH`) | Dynamically extracted via left-label scanning, with fallback to `CELL_R<row>_C<col>`. |
 

@@ -165,8 +165,8 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t
       }
       g_last_corner_tick = now;
 
-      // An authentic M8 cursor bracket has multiple corner segments and spans at least 10x7 pixels
-      if (g_cur_corner_count >= 3 && (g_cur_max_x - g_cur_min_x) >= 10 && (g_cur_max_y - g_cur_min_y) >= 7) {
+      // An authentic M8 cursor bracket has multiple corner segments and spans at least 6x6 pixels
+      if (g_cur_corner_count >= 3 && (g_cur_max_x - g_cur_min_x) >= 6 && (g_cur_max_y - g_cur_min_y) >= 6) {
         int col = (g_cur_min_x + 1) / 8;
         int row = (g_cur_min_y + 1) / 8;
 
@@ -738,6 +738,44 @@ static void snap_cursor_to_token(int row, int *col, int *width) {
     }
   }
 
+  // KEYBOARD / Character Picker Screen
+  if (strcmp(g_screen_state.active_screen, "KEYBOARD") == 0) {
+    if (row <= 6) {
+      // Name Buffer row: snap to the full name token if pointing to a non-empty name
+      int sc = 0;
+      while (sc < len && line[sc] == ' ') sc++;
+      int ec = len;
+      while (ec > sc && line[ec - 1] == ' ') ec--;
+      if (ec > sc) {
+        *col = sc;
+        *width = ec - sc;
+        return;
+      }
+    } else {
+      // Character grid row: check multi-character buttons first
+      const char *multi_btns[] = {"SPACE", "CANCEL", "CLEAR", "DELETE", "DEL", "CLR", "OK", NULL};
+      for (int b = 0; multi_btns[b] != NULL; b++) {
+        const char *btn = multi_btns[b];
+        const char *pos = strstr(line, btn);
+        if (pos != NULL) {
+          int b_col = (int)(pos - line);
+          int b_len = (int)strlen(btn);
+          if (c >= b_col && c < b_col + b_len) {
+            *col = b_col;
+            *width = b_len;
+            return;
+          }
+        }
+      }
+      // Single character cell in letter grid
+      if (line[c] != ' ') {
+        *col = c;
+        *width = 1;
+        return;
+      }
+    }
+  }
+
   int start = c;
   int end = c;
 
@@ -784,11 +822,15 @@ static void analyze_screen_state(void) {
     }
   }
 
-  // Check for Keyboard / Name Picker Modal (contains "SPACE" on keyboard grid)
+  // Check for Keyboard / Character Picker Modal
   int is_keyboard = 0;
   if (!has_dir_entry && strstr(header_raw, "DIRECTORY") == NULL && strstr(header_raw, "DIR:") == NULL) {
-    for (int r = 10; r < 25; r++) {
-      if (strstr(g_screen_state.text[r], "SPACE") != NULL) {
+    for (int r = 4; r < 25; r++) {
+      if (strstr(g_screen_state.text[r], "SPACE") != NULL ||
+          strstr(g_screen_state.text[r], "CLEAR") != NULL ||
+          strstr(g_screen_state.text[r], "A B C D E") != NULL ||
+          strstr(g_screen_state.text[r], "Q W E R T") != NULL ||
+          strstr(g_screen_state.text[r], "1 2 3 4 5") != NULL) {
         is_keyboard = 1;
         break;
       }
@@ -1337,6 +1379,38 @@ static void analyze_screen_state(void) {
           matched = 1;
         } else {
           snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "FILE_ITEM");
+          matched = 1;
+        }
+      }
+    }
+
+    // Special Dynamic Screen Matrix: KEYBOARD / Character Picker
+    else if (strcmp(g_screen_state.active_screen, "KEYBOARD") == 0) {
+      if (row <= 6) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "NAME_BUFFER");
+        matched = 1;
+      } else {
+        const char *val = g_screen_state.current_value;
+        if (strcmp(val, "SPACE") == 0) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "SPACE_BTN");
+          matched = 1;
+        } else if (strcmp(val, "OK") == 0) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "OK_BTN");
+          matched = 1;
+        } else if (strcmp(val, "CANCEL") == 0) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "CANCEL_BTN");
+          matched = 1;
+        } else if (strcmp(val, "CLEAR") == 0 || strcmp(val, "CLR") == 0) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "CLEAR_BTN");
+          matched = 1;
+        } else if (strcmp(val, "DEL") == 0 || strcmp(val, "DELETE") == 0) {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "DELETE_BTN");
+          matched = 1;
+        } else if (strlen(val) == 1 && val[0] != ' ') {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "PICKER_CHAR");
+          matched = 1;
+        } else {
+          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "KEY_CHAR");
           matched = 1;
         }
       }
