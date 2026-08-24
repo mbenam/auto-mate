@@ -653,6 +653,123 @@ static void test_virtual_screen_sampler(void) {
   TEST_ASSERT(strstr(json, "\"value\":\"60\"") != NULL, "Value is 60");
 }
 
+static void test_virtual_screen_fmsynth(void) {
+  printf("Running test_virtual_screen_fmsynth (traversing all FM Synth parameters & 4 operators)...\n");
+  ai_screen_init();
+  ai_screen_reset();
+
+  feed_text_row(0, 0, "FMSYNTH 00");
+  feed_text_row(1, 0, "TYPE: FMSYNTH   NAME: ACID_FM");
+  feed_text_row(2, 0, "TRANSP. ON      TABLE: 00");
+  feed_text_row(3, 0, "PITCH: +00      FINE: +00");
+  feed_text_row(4, 0, "ALGO: 04");
+  feed_text_row(5, 0, "OP1: 01.00  LEV: FF  FB: 00");
+  feed_text_row(6, 0, "OP2: 02.00  LEV: 80  MOD: 00");
+  feed_text_row(7, 0, "OP3: 03.00  LEV: 40  FB: 00");
+  feed_text_row(8, 0, "OP4: 04.00  LEV: 20  MOD: 00");
+  feed_text_row(10, 0, "FILTER: LOWPASS CUTOFF: FF  RES: 20");
+  feed_text_row(11, 0, "AMP: AHD        LIMIT: CLIP");
+  feed_text_row(12, 0, "VOLUME: C0      PAN: MID");
+  feed_text_row(13, 0, "DRY: C0         CHO: 00");
+  feed_text_row(14, 0, "DEL: 40         REV: 60");
+
+  char json[2048];
+
+  // 1. Header Row 0
+  draw_corner_cursor(8, 0, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"INSTRUMENT\"") != NULL, "FM Synth screen is INSTRUMENT");
+  TEST_ASSERT(strstr(json, "\"input\":\"INST_NUM\"") != NULL, "Header input is INST_NUM");
+  TEST_ASSERT(strstr(json, "\"value\":\"00\"") != NULL, "Value is 00");
+
+  // 2. Row 1: TYPE & NAME
+  draw_corner_cursor(6, 1, 7);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"INST_TYPE\"") != NULL, "Input is INST_TYPE");
+  TEST_ASSERT(strstr(json, "\"value\":\"FMSYNTH\"") != NULL, "Value is FMSYNTH");
+
+  draw_corner_cursor(22, 1, 7);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"NAME\"") != NULL, "Input is NAME");
+  TEST_ASSERT(strstr(json, "\"value\":\"ACID_FM\"") != NULL, "Value is ACID_FM");
+
+  // 3. Row 4: ALGO
+  draw_corner_cursor(0, 4, 4); // on "ALGO"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"ALGO\"") != NULL, "Input is ALGO on label");
+  TEST_ASSERT(strstr(json, "\"value\":\"04\"") != NULL, "Value is 04");
+
+  draw_corner_cursor(6, 4, 2); // on "04"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"ALGO\"") != NULL, "Input is ALGO on value");
+
+  // 4. Row 5: OP1 (Ratio, Level, Feedback)
+  draw_corner_cursor(0, 5, 3); // on "OP1"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP1_RATIO\"") != NULL, "Input is OP1_RATIO on label");
+  TEST_ASSERT(strstr(json, "\"value\":\"01.00\"") != NULL, "Value is 01.00");
+
+  draw_corner_cursor(5, 5, 5); // on "01.00"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP1_RATIO\"") != NULL, "Input is OP1_RATIO on value");
+
+  draw_corner_cursor(12, 5, 3); // right-arrow to "LEV"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP1_LEVEL\"") != NULL, "Input is OP1_LEVEL on label");
+  TEST_ASSERT(strstr(json, "\"value\":\"FF\"") != NULL, "Value is FF");
+
+  draw_corner_cursor(17, 5, 2); // right-arrow to "FF"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP1_LEVEL\"") != NULL, "Input is OP1_LEVEL on value");
+
+  draw_corner_cursor(21, 5, 2); // right-arrow to "FB"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP1_FEEDBACK\"") != NULL, "Input is OP1_FEEDBACK on label");
+  TEST_ASSERT(strstr(json, "\"value\":\"00\"") != NULL, "Value is 00");
+
+  draw_corner_cursor(25, 5, 2); // right-arrow to "00"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP1_FEEDBACK\"") != NULL, "Input is OP1_FEEDBACK on value");
+
+  // 5. Row 6: OP2 (Ratio, Level, Mod)
+  draw_corner_cursor(5, 6, 5); // on "02.00"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP2_RATIO\"") != NULL, "Input is OP2_RATIO");
+  TEST_ASSERT(strstr(json, "\"value\":\"02.00\"") != NULL, "Value is 02.00");
+
+  draw_corner_cursor(17, 6, 2); // right-arrow to "80"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP2_LEVEL\"") != NULL, "Input is OP2_LEVEL");
+  TEST_ASSERT(strstr(json, "\"value\":\"80\"") != NULL, "Value is 80");
+
+  draw_corner_cursor(21, 6, 3); // right-arrow to "MOD"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP2_MOD\"") != NULL, "Input is OP2_MOD on label");
+  TEST_ASSERT(strstr(json, "\"value\":\"00\"") != NULL, "Value is 00");
+
+  // 6. Row 7: OP3 (Ratio, Level, Feedback)
+  draw_corner_cursor(5, 7, 5); // on "03.00"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP3_RATIO\"") != NULL, "Input is OP3_RATIO");
+  TEST_ASSERT(strstr(json, "\"value\":\"03.00\"") != NULL, "Value is 03.00");
+
+  draw_corner_cursor(17, 7, 2); // right-arrow to "40"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP3_LEVEL\"") != NULL, "Input is OP3_LEVEL");
+  TEST_ASSERT(strstr(json, "\"value\":\"40\"") != NULL, "Value is 40");
+
+  // 7. Row 8: OP4 (Ratio, Level, Mod)
+  draw_corner_cursor(5, 8, 5); // on "04.00"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP4_RATIO\"") != NULL, "Input is OP4_RATIO");
+  TEST_ASSERT(strstr(json, "\"value\":\"04.00\"") != NULL, "Value is 04.00");
+
+  draw_corner_cursor(17, 8, 2); // right-arrow to "20"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"OP4_LEVEL\"") != NULL, "Input is OP4_LEVEL");
+  TEST_ASSERT(strstr(json, "\"value\":\"20\"") != NULL, "Value is 20");
+}
+
 static void draw_corner_cursor(int col, int row, int width_chars) {
   SDL_Delay(25);
   int x = col * 8;
@@ -1464,6 +1581,7 @@ int main(int argc, char *argv[]) {
   test_virtual_screen_confirm_dialog();
   test_virtual_screen_synth_left_label();
   test_virtual_screen_sampler();
+  test_virtual_screen_fmsynth();
   test_virtual_screen_keyboard();
   test_audio_recording();
   test_live_tcp_server();

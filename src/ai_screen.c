@@ -388,6 +388,46 @@ static void standardize_parameter_label(char *label, size_t label_len) {
   else if (strcmp(label, "NAME") == 0 || strcmp(label, "INST NAME") == 0) snprintf(label, label_len, "NAME");
   else if (strcmp(label, "AMP") == 0) snprintf(label, label_len, "AMP");
   else if (strcmp(label, "LIM") == 0 || strcmp(label, "LIMIT") == 0) snprintf(label, label_len, "LIMIT");
+  else if (strcmp(label, "ALGO") == 0 || strcmp(label, "ALGORITHM") == 0) snprintf(label, label_len, "ALGO");
+
+  // FMSYNTH Operators 1..4
+  else if (strcmp(label, "OP1") == 0 || strcmp(label, "OP1 RAT") == 0 || strcmp(label, "OP1 RATIO") == 0 || strcmp(label, "OP1_RAT") == 0 || strcmp(label, "OP1_RATIO") == 0) snprintf(label, label_len, "OP1_RATIO");
+  else if (strcmp(label, "OP1 LEV") == 0 || strcmp(label, "OP1 LEVEL") == 0 || strcmp(label, "OP1_LEV") == 0 || strcmp(label, "OP1_LEVEL") == 0) snprintf(label, label_len, "OP1_LEVEL");
+  else if (strcmp(label, "OP1 FB") == 0 || strcmp(label, "OP1 FEEDBACK") == 0 || strcmp(label, "OP1_FB") == 0 || strcmp(label, "OP1_FEEDBACK") == 0) snprintf(label, label_len, "OP1_FEEDBACK");
+  else if (strcmp(label, "OP1 MOD") == 0 || strcmp(label, "OP1_MOD") == 0) snprintf(label, label_len, "OP1_MOD");
+  else if (strcmp(label, "OP1 SHP") == 0 || strcmp(label, "OP1 SHAPE") == 0 || strcmp(label, "OP1_SHP") == 0 || strcmp(label, "OP1_SHAPE") == 0) snprintf(label, label_len, "OP1_SHAPE");
+  else if (strcmp(label, "OP1 DET") == 0 || strcmp(label, "OP1 DETUNE") == 0 || strcmp(label, "OP1_DET") == 0 || strcmp(label, "OP1_DETUNE") == 0) snprintf(label, label_len, "OP1_DETUNE");
+  else if (strcmp(label, "OP1 WAVE") == 0 || strcmp(label, "OP1_WAVE") == 0) snprintf(label, label_len, "OP1_WAVE");
+
+  else if (strcmp(label, "OP2") == 0 || strcmp(label, "OP2 RAT") == 0 || strcmp(label, "OP2 RATIO") == 0 || strcmp(label, "OP2_RAT") == 0 || strcmp(label, "OP2_RATIO") == 0) snprintf(label, label_len, "OP2_RATIO");
+  else if (strcmp(label, "OP2 LEV") == 0 || strcmp(label, "OP2 LEVEL") == 0 || strcmp(label, "OP2_LEV") == 0 || strcmp(label, "OP2_LEVEL") == 0) snprintf(label, label_len, "OP2_LEVEL");
+  else if (strcmp(label, "OP2 FB") == 0 || strcmp(label, "OP2 FEEDBACK") == 0 || strcmp(label, "OP2_FB") == 0 || strcmp(label, "OP2_FEEDBACK") == 0) snprintf(label, label_len, "OP2_FEEDBACK");
+  else if (strcmp(label, "OP2 MOD") == 0 || strcmp(label, "OP2_MOD") == 0) snprintf(label, label_len, "OP2_MOD");
+  else if (strcmp(label, "OP2 SHP") == 0 || strcmp(label, "OP2 SHAPE") == 0 || strcmp(label, "OP2_SHP") == 0 || strcmp(label, "OP2_SHAPE") == 0) snprintf(label, label_len, "OP2_SHAPE");
+  else if (strcmp(label, "OP2 DET") == 0 || strcmp(label, "OP2 DETUNE") == 0 || strcmp(label, "OP2_DET") == 0 || strcmp(label, "OP2_DETUNE") == 0) snprintf(label, label_len, "OP2_DETUNE");
+  else if (strcmp(label, "OP2 WAVE") == 0 || strcmp(label, "OP2_WAVE") == 0) snprintf(label, label_len, "OP2_WAVE");
+
+  else if (strcmp(label, "OP3") == 0 || strcmp(label, "OP3 RAT") == 0 || strcmp(label, "OP3 RATIO") == 0 || strcmp(label, "OP3_RAT") == 0 || strcmp(label, "OP3_RATIO") == 0) snprintf(label, label_len, "OP3_RATIO");
+  else if (strcmp(label, "OP3 LEV") == 0 || strcmp(label, "OP3 LEVEL") == 0 || strcmp(label, "OP3_LEV") == 0 || strcmp(label, "OP3_LEVEL") == 0) snprintf(label, label_len, "OP3_LEVEL");
+  else if (strcmp(label, "OP3 FB") == 0 || strcmp(label, "OP3 FEEDBACK") == 0 || strcmp(label, "OP3_FB") == 0 || strcmp(label, "OP3_FEEDBACK") == 0) snprintf(label, label_len, "OP3_FEEDBACK");
+  else if (strcmp(label, "OP3 MOD") == 0 || strcmp(label, "OP3_MOD") == 0) snprintf(label, label_len, "OP3_MOD");
+  else if (strcmp(label, "OP3 SHP") == 0 || strcmp(label, "OP3 SHAPE") == 0 || strcmp(label, "OP3_SHP") == 0 || strcmp(label, "OP3_SHAPE") == 0) snprintf(label, label_len, "OP3_SHAPE");
+  else if (strcmp(label, "OP3 DET") == 0 || strcmp(label, "OP3 DETUNE") == 0 || strcmp(label, "OP3_DET") == 0 || strcmp(label, "OP3_DETUNE") == 0) snprintf(label, label_len, "OP3_DETUNE");
+  else if (strcmp(label, "OP3 WAVE") == 0 || strcmp(label, "OP3_WAVE") == 0) snprintf(label, label_len, "OP3_WAVE");
+
+  else if (strcmp(label, "OP4") == 0 || strcmp(label, "OP4 RAT") == 0 || strcmp(label, "OP4 RATIO") == 0 || strcmp(label, "OP4_RAT") == 0 || strcmp(label, "OP4_RATIO") == 0) snprintf(label, label_len, "OP4_RATIO");
+  else if (strcmp(label, "OP4 LEV") == 0 || strcmp(label, "OP4 LEVEL") == 0 || strcmp(label, "OP4_LEV") == 0 || strcmp(label, "OP4_LEVEL") == 0) snprintf(label, label_len, "OP4_LEVEL");
+  else if (strcmp(label, "OP4 FB") == 0 || strcmp(label, "OP4 FEEDBACK") == 0 || strcmp(label, "OP4_FB") == 0 || strcmp(label, "OP4_FEEDBACK") == 0) snprintf(label, label_len, "OP4_FEEDBACK");
+  else if (strcmp(label, "OP4 MOD") == 0 || strcmp(label, "OP4_MOD") == 0) snprintf(label, label_len, "OP4_MOD");
+  else if (strcmp(label, "OP4 SHP") == 0 || strcmp(label, "OP4 SHAPE") == 0 || strcmp(label, "OP4_SHP") == 0 || strcmp(label, "OP4_SHAPE") == 0) snprintf(label, label_len, "OP4_SHAPE");
+  else if (strcmp(label, "OP4 DET") == 0 || strcmp(label, "OP4 DETUNE") == 0 || strcmp(label, "OP4_DET") == 0 || strcmp(label, "OP4_DETUNE") == 0) snprintf(label, label_len, "OP4_DETUNE");
+  else if (strcmp(label, "OP4 WAVE") == 0 || strcmp(label, "OP4_WAVE") == 0) snprintf(label, label_len, "OP4_WAVE");
+
+  else if (strcmp(label, "RAT") == 0 || strcmp(label, "RATIO") == 0) snprintf(label, label_len, "RATIO");
+  else if (strcmp(label, "LEV") == 0 || strcmp(label, "LEVEL") == 0) snprintf(label, label_len, "LEVEL");
+  else if (strcmp(label, "FB") == 0 || strcmp(label, "FEEDBACK") == 0) snprintf(label, label_len, "FEEDBACK");
+  else if (strcmp(label, "DET") == 0 || strcmp(label, "DETUNE") == 0) snprintf(label, label_len, "DETUNE");
+  else if (strcmp(label, "WAVE") == 0) snprintf(label, label_len, "WAVE");
 }
 
 static int is_known_param_label(const char *tok) {
@@ -411,7 +451,9 @@ static int is_known_param_label(const char *tok) {
       "DECAY", "DEC", "SUSTAIN", "SUS", "RELEASE", "REL",
       "SOURCE", "SRC", "LOW", "HIGH", "OSC", "SIZE",
       "MULT", "WARP", "MIRROR", "SCAN", "TIMBRE", "COLOR",
-      "REDUCE", "ALGO", "RATIO", "LEVS", "FB", "MOD",
+      "REDUCE", "ALGO", "ALGORITHM", "RATIO", "RAT", "LEVS",
+      "LEV", "LEVEL", "FB", "FEEDBACK", "MOD", "DET", "DETUNE",
+      "OP1", "OP2", "OP3", "OP4", "WAVE", "CARRIER", "MODULATOR",
       "PORT", "CHANNEL", "CHN", "BANK", "PROGRAM", "PGM",
       "CC1", "CC2", "CC3", "CC4", "TEMPO", "GROOVE", "SCALE",
       "EQ", "CHO_RETURN", "DEL_RETURN", "REV_RETURN", "OUTPUT_VOL",
@@ -491,6 +533,13 @@ static int resolve_multi_column_row(const char *line, int cursor_col,
         (strcmp(clean0, "PLAY") == 0 && strcmp(clean1, "MODE") == 0) ||
         (strcmp(clean0, "FINE") == 0 && strcmp(clean1, "TUNE") == 0) ||
         (strcmp(clean0, "CUT") == 0 && strcmp(clean1, "OFF") == 0) ||
+        ((strncmp(clean0, "OP", 2) == 0 && isdigit((unsigned char)clean0[2])) &&
+         (strcmp(clean1, "RAT") == 0 || strcmp(clean1, "RATIO") == 0 ||
+          strcmp(clean1, "LEV") == 0 || strcmp(clean1, "LEVEL") == 0 ||
+          strcmp(clean1, "FB") == 0 || strcmp(clean1, "FEEDBACK") == 0 ||
+          strcmp(clean1, "MOD") == 0 || strcmp(clean1, "DET") == 0 ||
+          strcmp(clean1, "DETUNE") == 0 || strcmp(clean1, "SHP") == 0 ||
+          strcmp(clean1, "SHAPE") == 0 || strcmp(clean1, "WAVE") == 0)) ||
         (strcmp(clean0, "MOD") == 0 && (strcmp(clean1, "RATE") == 0 || strcmp(clean1, "DEST") == 0 || strcmp(clean1, "AMT") == 0))) {
       snprintf(tokens[t].text, sizeof(tokens[t].text), "%s %s", clean0, clean1);
       tokens[t].end_col = tokens[t + 1].end_col;
@@ -500,6 +549,19 @@ static int resolve_multi_column_row(const char *line, int cursor_col,
         tokens[k] = tokens[k + 1];
       }
       token_count--;
+    }
+  }
+
+  // Detect if row has an operator prefix (e.g. OP1, OP2, OP3, OP4)
+  char op_prefix[8] = {0};
+  if (token_count > 0) {
+    char first_clean[32];
+    snprintf(first_clean, sizeof(first_clean), "%s", tokens[0].text);
+    str_clean_punct(first_clean);
+    str_trim(first_clean);
+    for (size_t c = 0; c < strlen(first_clean); c++) first_clean[c] = (char)toupper((unsigned char)first_clean[c]);
+    if (strncmp(first_clean, "OP", 2) == 0 && isdigit((unsigned char)first_clean[2])) {
+      snprintf(op_prefix, sizeof(op_prefix), "OP%c", first_clean[2]);
     }
   }
 
@@ -554,6 +616,31 @@ static int resolve_multi_column_row(const char *line, int cursor_col,
       snprintf(resolved_label, sizeof(resolved_label), "%s", tokens[label_idx].text);
     } else {
       snprintf(resolved_label, sizeof(resolved_label), "%s", tokens[cur_idx].text);
+    }
+  }
+
+  // If row has an operator prefix and resolved_label is a sub-parameter, prefix it
+  if (strlen(op_prefix) > 0 && strncmp(resolved_label, "OP", 2) != 0) {
+    char clean_sub[32];
+    snprintf(clean_sub, sizeof(clean_sub), "%s", resolved_label);
+    str_clean_punct(clean_sub);
+    str_trim(clean_sub);
+    for (size_t c = 0; c < strlen(clean_sub); c++) clean_sub[c] = (char)toupper((unsigned char)clean_sub[c]);
+
+    if (strcmp(clean_sub, "LEV") == 0 || strcmp(clean_sub, "LEVEL") == 0) {
+      snprintf(resolved_label, sizeof(resolved_label), "%s_LEVEL", op_prefix);
+    } else if (strcmp(clean_sub, "FB") == 0 || strcmp(clean_sub, "FEEDBACK") == 0) {
+      snprintf(resolved_label, sizeof(resolved_label), "%s_FEEDBACK", op_prefix);
+    } else if (strcmp(clean_sub, "MOD") == 0) {
+      snprintf(resolved_label, sizeof(resolved_label), "%s_MOD", op_prefix);
+    } else if (strcmp(clean_sub, "DET") == 0 || strcmp(clean_sub, "DETUNE") == 0) {
+      snprintf(resolved_label, sizeof(resolved_label), "%s_DETUNE", op_prefix);
+    } else if (strcmp(clean_sub, "SHP") == 0 || strcmp(clean_sub, "SHAPE") == 0) {
+      snprintf(resolved_label, sizeof(resolved_label), "%s_SHAPE", op_prefix);
+    } else if (strcmp(clean_sub, "RAT") == 0 || strcmp(clean_sub, "RATIO") == 0) {
+      snprintf(resolved_label, sizeof(resolved_label), "%s_RATIO", op_prefix);
+    } else if (strcmp(clean_sub, "WAVE") == 0) {
+      snprintf(resolved_label, sizeof(resolved_label), "%s_WAVE", op_prefix);
     }
   }
 
