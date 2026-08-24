@@ -465,189 +465,196 @@ static void test_virtual_screen_synth_left_label(void) {
 }
 
 static void test_virtual_screen_sampler(void) {
-  printf("Running test_virtual_screen_sampler (traversing all Sampler instrument fields)...\n");
+  printf("Running test_virtual_screen_sampler (multi-column row traversal across left and right columns)...\n");
   ai_screen_init();
   ai_screen_reset();
 
   feed_text_row(0, 0, "SAMPLER 00");
   feed_text_row(1, 0, "TYPE: SAMPLER   NAME: 808_KICK");
   feed_text_row(2, 0, "TRANSP. ON      TABLE: 00");
-  feed_text_row(4, 0, "SAMPLE  808_KICK.WAV");
-  feed_text_row(5, 0, "SLICE   16");
-  feed_text_row(6, 0, "PLAY    FWDLOOP");
-  feed_text_row(7, 0, "START   0000");
-  feed_text_row(8, 0, "LOOP ST 0080");
-  feed_text_row(9, 0, "LENGTH  0200");
-  feed_text_row(10, 0, "DEGRADE 00");
-  feed_text_row(12, 0, "FILTER  LOWPASS");
-  feed_text_row(13, 0, "CUTOFF  FF");
-  feed_text_row(14, 0, "RES     20");
-  feed_text_row(16, 0, "AMP     AHD");
-  feed_text_row(17, 0, "LIMIT   CLIP");
-  feed_text_row(18, 0, "VOLUME  C0");
-  feed_text_row(19, 0, "PAN     MID");
-  feed_text_row(20, 0, "DRY     C0");
-  feed_text_row(21, 0, "CHO     00");
-  feed_text_row(22, 0, "DEL     40");
-  feed_text_row(23, 0, "REV     60");
-  feed_text_row(24, 0, "PITCH   +00");
-  feed_text_row(25, 0, "FINE    +00");
+  feed_text_row(3, 0, "PITCH: +00      FINE: +00");
+  feed_text_row(4, 0, "SAMPLE: 808_KICK.WAV");
+  feed_text_row(5, 0, "SLICE: 16       PLAY: FWDLOOP");
+  feed_text_row(6, 0, "START: 0000     LOOP ST: 0080");
+  feed_text_row(7, 0, "LENGTH: 0200    DEGRADE: 00");
+  feed_text_row(8, 0, "FILTER: LOWPASS CUTOFF: FF  RES: 20");
+  feed_text_row(9, 0, "AMP: AHD        LIMIT: CLIP");
+  feed_text_row(10, 0, "VOLUME: C0      PAN: MID");
+  feed_text_row(11, 0, "DRY: C0         CHO: 00");
+  feed_text_row(12, 0, "DEL: 40         REV: 60");
 
   char json[2048];
 
-  // 1. Header Instrument Number
+  // 1. Header Row 0
   draw_corner_cursor(8, 0, 2);
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"screen\":\"INSTRUMENT\"") != NULL, "Screen is INSTRUMENT");
   TEST_ASSERT(strstr(json, "\"input\":\"INST_NUM\"") != NULL, "Header input is INST_NUM");
   TEST_ASSERT(strstr(json, "\"value\":\"00\"") != NULL, "Value is 00");
 
-  // 2. Instrument Type
+  // 2. Row 1: TYPE (Left) & NAME (Right)
   draw_corner_cursor(6, 1, 7);
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"input\":\"INST_TYPE\"") != NULL, "Input is INST_TYPE");
   TEST_ASSERT(strstr(json, "\"value\":\"SAMPLER\"") != NULL, "Value is SAMPLER");
 
-  // 3. Instrument Name
   draw_corner_cursor(22, 1, 8);
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"input\":\"NAME\"") != NULL, "Input is NAME");
   TEST_ASSERT(strstr(json, "\"value\":\"808_KICK\"") != NULL, "Value is 808_KICK");
 
-  // 4. Transpose
+  // 3. Row 2: TRANSP (Left) & TABLE (Right)
   draw_corner_cursor(8, 2, 2);
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"input\":\"TRANSPOSE\"") != NULL, "Input is TRANSPOSE");
   TEST_ASSERT(strstr(json, "\"value\":\"ON\"") != NULL, "Value is ON");
 
-  // 5. Table
   draw_corner_cursor(23, 2, 2);
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"input\":\"TABLE\"") != NULL, "Input is TABLE");
   TEST_ASSERT(strstr(json, "\"value\":\"00\"") != NULL, "Value is 00");
 
-  // 6. SAMPLE
+  // 4. Row 3: PITCH (Left) & FINE (Right) - testing both label and value
+  draw_corner_cursor(0, 3, 5); // on "PITCH"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"PITCH\"") != NULL, "Label cursor resolves PITCH");
+  TEST_ASSERT(strstr(json, "\"value\":\"+00\"") != NULL, "Label cursor value is +00");
+
+  draw_corner_cursor(7, 3, 3); // on "+00"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"PITCH\"") != NULL, "Value cursor resolves PITCH");
+
+  draw_corner_cursor(16, 3, 4); // on "FINE"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"FINETUNE\"") != NULL, "Right-arrow to FINE resolves FINETUNE");
+  TEST_ASSERT(strstr(json, "\"value\":\"+00\"") != NULL, "Value is +00");
+
+  draw_corner_cursor(22, 3, 3); // on "+00"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"FINETUNE\"") != NULL, "Right-arrow to +00 resolves FINETUNE");
+
+  // 5. Row 4: SAMPLE (Full width)
   draw_corner_cursor(8, 4, 12);
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"input\":\"SAMPLE\"") != NULL, "Input is SAMPLE");
   TEST_ASSERT(strstr(json, "\"value\":\"808_KICK.WAV\"") != NULL, "Value is 808_KICK.WAV");
 
-  // 7. SLICE
-  draw_corner_cursor(8, 5, 2);
+  // 6. Row 5: SLICE (Left) & PLAY (Right)
+  draw_corner_cursor(0, 5, 5); // on "SLICE"
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"SLICE\"") != NULL, "Input is SLICE");
+  TEST_ASSERT(strstr(json, "\"input\":\"SLICE\"") != NULL, "Input is SLICE on label");
   TEST_ASSERT(strstr(json, "\"value\":\"16\"") != NULL, "Value is 16");
 
-  // 8. PLAY (Mode)
-  draw_corner_cursor(8, 6, 7);
+  draw_corner_cursor(7, 5, 2); // on "16"
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"PLAY_MODE\"") != NULL, "Input is PLAY_MODE");
+  TEST_ASSERT(strstr(json, "\"input\":\"SLICE\"") != NULL, "Input is SLICE on value");
+
+  draw_corner_cursor(16, 5, 4); // right-arrow to "PLAY"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"PLAY_MODE\"") != NULL, "Right-arrow to PLAY resolves PLAY_MODE");
   TEST_ASSERT(strstr(json, "\"value\":\"FWDLOOP\"") != NULL, "Value is FWDLOOP");
 
-  // 9. START
-  draw_corner_cursor(8, 7, 4);
+  draw_corner_cursor(22, 5, 7); // right-arrow to "FWDLOOP"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"PLAY_MODE\"") != NULL, "Right-arrow on value resolves PLAY_MODE");
+
+  // 7. Row 6: START (Left) & LOOP ST (Right)
+  draw_corner_cursor(7, 6, 4); // on START value "0000"
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"input\":\"START\"") != NULL, "Input is START");
   TEST_ASSERT(strstr(json, "\"value\":\"0000\"") != NULL, "Value is 0000");
 
-  // 10. LOOP ST (Compound Label)
-  draw_corner_cursor(8, 8, 4);
+  draw_corner_cursor(16, 6, 7); // right-arrow to "LOOP ST"
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"LOOP_START\"") != NULL, "Input is LOOP_START");
+  TEST_ASSERT(strstr(json, "\"input\":\"LOOP_START\"") != NULL, "Right-arrow to LOOP ST resolves LOOP_START");
   TEST_ASSERT(strstr(json, "\"value\":\"0080\"") != NULL, "Value is 0080");
 
-  // 11. LENGTH
-  draw_corner_cursor(8, 9, 4);
+  draw_corner_cursor(25, 6, 4); // right-arrow to "0080"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"LOOP_START\"") != NULL, "Right-arrow on value resolves LOOP_START");
+
+  // 8. Row 7: LENGTH (Left) & DEGRADE (Right)
+  draw_corner_cursor(8, 7, 4); // on "0200"
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"input\":\"LENGTH\"") != NULL, "Input is LENGTH");
   TEST_ASSERT(strstr(json, "\"value\":\"0200\"") != NULL, "Value is 0200");
 
-  // 12. DEGRADE
-  draw_corner_cursor(8, 10, 2);
+  draw_corner_cursor(25, 7, 2); // right-arrow to "00"
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"DEGRADE\"") != NULL, "Input is DEGRADE");
+  TEST_ASSERT(strstr(json, "\"input\":\"DEGRADE\"") != NULL, "Right-arrow to DEGRADE value resolves DEGRADE");
   TEST_ASSERT(strstr(json, "\"value\":\"00\"") != NULL, "Value is 00");
 
-  // 13. FILTER
-  draw_corner_cursor(8, 12, 7);
+  // 9. Row 8: 3 Columns! FILTER (Left), CUTOFF (Middle), RES (Right)
+  draw_corner_cursor(8, 8, 7); // on "LOWPASS"
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"FILTER_TYPE\"") != NULL, "Input is FILTER_TYPE");
+  TEST_ASSERT(strstr(json, "\"input\":\"FILTER_TYPE\"") != NULL, "Left column resolves FILTER_TYPE");
   TEST_ASSERT(strstr(json, "\"value\":\"LOWPASS\"") != NULL, "Value is LOWPASS");
 
-  // 14. CUTOFF
-  draw_corner_cursor(8, 13, 2);
+  draw_corner_cursor(16, 8, 6); // right-arrow to "CUTOFF"
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"CUTOFF\"") != NULL, "Input is CUTOFF");
+  TEST_ASSERT(strstr(json, "\"input\":\"CUTOFF\"") != NULL, "Middle column label resolves CUTOFF");
   TEST_ASSERT(strstr(json, "\"value\":\"FF\"") != NULL, "Value is FF");
 
-  // 15. RES (Resonance)
-  draw_corner_cursor(8, 14, 2);
+  draw_corner_cursor(24, 8, 2); // right-arrow to "FF"
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"RESONANCE\"") != NULL, "Input is RESONANCE");
+  TEST_ASSERT(strstr(json, "\"input\":\"CUTOFF\"") != NULL, "Middle column value resolves CUTOFF");
+
+  draw_corner_cursor(28, 8, 3); // right-arrow to "RES"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"RESONANCE\"") != NULL, "Right column label resolves RESONANCE");
   TEST_ASSERT(strstr(json, "\"value\":\"20\"") != NULL, "Value is 20");
 
-  // 16. AMP
-  draw_corner_cursor(8, 16, 3);
+  draw_corner_cursor(33, 8, 2); // right-arrow to "20"
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"RESONANCE\"") != NULL, "Right column value resolves RESONANCE");
+
+  // 10. Row 9: AMP (Left) & LIMIT (Right)
+  draw_corner_cursor(5, 9, 3); // on "AHD"
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"input\":\"AMP\"") != NULL, "Input is AMP");
   TEST_ASSERT(strstr(json, "\"value\":\"AHD\"") != NULL, "Value is AHD");
 
-  // 17. LIMIT
-  draw_corner_cursor(8, 17, 4);
+  draw_corner_cursor(23, 9, 4); // right-arrow to "CLIP"
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"LIMIT\"") != NULL, "Input is LIMIT");
+  TEST_ASSERT(strstr(json, "\"input\":\"LIMIT\"") != NULL, "Right-arrow resolves LIMIT");
   TEST_ASSERT(strstr(json, "\"value\":\"CLIP\"") != NULL, "Value is CLIP");
 
-  // 18. VOLUME
-  draw_corner_cursor(8, 18, 2);
+  // 11. Row 10: VOLUME (Left) & PAN (Right)
+  draw_corner_cursor(8, 10, 2); // on "C0"
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"input\":\"VOLUME\"") != NULL, "Input is VOLUME");
   TEST_ASSERT(strstr(json, "\"value\":\"C0\"") != NULL, "Value is C0");
 
-  // 19. PAN
-  draw_corner_cursor(8, 19, 3);
+  draw_corner_cursor(21, 10, 3); // right-arrow to "MID"
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"PAN\"") != NULL, "Input is PAN");
+  TEST_ASSERT(strstr(json, "\"input\":\"PAN\"") != NULL, "Right-arrow resolves PAN");
   TEST_ASSERT(strstr(json, "\"value\":\"MID\"") != NULL, "Value is MID");
 
-  // 20. DRY
-  draw_corner_cursor(8, 20, 2);
+  // 12. Row 11: DRY (Left) & CHO (Right)
+  draw_corner_cursor(5, 11, 2); // on "C0"
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"input\":\"DRY\"") != NULL, "Input is DRY");
   TEST_ASSERT(strstr(json, "\"value\":\"C0\"") != NULL, "Value is C0");
 
-  // 21. CHORUS
-  draw_corner_cursor(8, 21, 2);
+  draw_corner_cursor(21, 11, 2); // right-arrow to "00"
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"CHORUS\"") != NULL, "Input is CHORUS");
+  TEST_ASSERT(strstr(json, "\"input\":\"CHORUS\"") != NULL, "Right-arrow resolves CHORUS");
   TEST_ASSERT(strstr(json, "\"value\":\"00\"") != NULL, "Value is 00");
 
-  // 22. DELAY
-  draw_corner_cursor(8, 22, 2);
+  // 13. Row 12: DEL (Left) & REV (Right)
+  draw_corner_cursor(5, 12, 2); // on "40"
   ai_screen_get_state_json(json, sizeof(json));
   TEST_ASSERT(strstr(json, "\"input\":\"DELAY\"") != NULL, "Input is DELAY");
   TEST_ASSERT(strstr(json, "\"value\":\"40\"") != NULL, "Value is 40");
 
-  // 23. REVERB
-  draw_corner_cursor(8, 23, 2);
+  draw_corner_cursor(21, 12, 2); // right-arrow to "60"
   ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"REVERB\"") != NULL, "Input is REVERB");
+  TEST_ASSERT(strstr(json, "\"input\":\"REVERB\"") != NULL, "Right-arrow resolves REVERB");
   TEST_ASSERT(strstr(json, "\"value\":\"60\"") != NULL, "Value is 60");
-
-  // 24. PITCH
-  draw_corner_cursor(8, 24, 3);
-  ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"PITCH\"") != NULL, "Input is PITCH");
-  TEST_ASSERT(strstr(json, "\"value\":\"+00\"") != NULL, "Value is +00");
-
-  // 25. FINETUNE
-  draw_corner_cursor(8, 25, 3);
-  ai_screen_get_state_json(json, sizeof(json));
-  TEST_ASSERT(strstr(json, "\"input\":\"FINETUNE\"") != NULL, "Input is FINETUNE");
-  TEST_ASSERT(strstr(json, "\"value\":\"+00\"") != NULL, "Value is +00");
 }
 
 static void draw_corner_cursor(int col, int row, int width_chars) {
+  SDL_Delay(25);
   int x = col * 8;
   int y = row * 8;
   int w = width_chars * 8;

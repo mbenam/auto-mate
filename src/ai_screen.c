@@ -142,7 +142,7 @@ void ai_screen_on_draw_rect(int px_x, int px_y, int w, int h, uint8_t r, uint8_t
     g_cur_max_x = -1;
     g_cur_max_y = -1;
     g_cur_corner_count = 0;
-  } else if (w > 0 && h > 0 && px_x < 240) {
+  } else if (w > 0 && h > 0 && px_x < 320 && px_y < 240) {
     Uint64 now = SDL_GetTicks();
 
     // 1. Check for small corner brackets of the M8 cursor (e.g. w <= 4, h <= 4)
@@ -388,6 +388,187 @@ static void standardize_parameter_label(char *label, size_t label_len) {
   else if (strcmp(label, "NAME") == 0 || strcmp(label, "INST NAME") == 0) snprintf(label, label_len, "NAME");
   else if (strcmp(label, "AMP") == 0) snprintf(label, label_len, "AMP");
   else if (strcmp(label, "LIM") == 0 || strcmp(label, "LIMIT") == 0) snprintf(label, label_len, "LIMIT");
+}
+
+static int is_known_param_label(const char *tok) {
+  if (!tok || strlen(tok) == 0) return 0;
+  char clean[32];
+  snprintf(clean, sizeof(clean), "%s", tok);
+  str_clean_punct(clean);
+  str_trim(clean);
+  for (size_t i = 0; i < strlen(clean); i++) clean[i] = (char)toupper((unsigned char)clean[i]);
+
+  const char *known_labels[] = {
+      "TYPE", "NAME", "TRANSP", "TRANS", "TABLE", "TBL",
+      "SAMPLE", "SMP", "SLICE", "SLC", "PLAY", "PLY",
+      "START", "STA", "LOOP", "ST", "LENGTH", "LEN",
+      "DEGRADE", "DEG", "FILTER", "FIL", "CUTOFF", "CUT",
+      "RES", "RESO", "RESONANCE", "AMP", "LIMIT", "LIM",
+      "VOLUME", "VOL", "PAN", "DRY", "CHORUS", "CHO",
+      "DELAY", "DEL", "REVERB", "REV", "PITCH", "PIT",
+      "FINE", "FINETUNE", "RATE", "DEST", "AMT", "SHAPE",
+      "SHP", "TRIG", "TRG", "ATTACK", "ATK", "HOLD", "HLD",
+      "DECAY", "DEC", "SUSTAIN", "SUS", "RELEASE", "REL",
+      "SOURCE", "SRC", "LOW", "HIGH", "OSC", "SIZE",
+      "MULT", "WARP", "MIRROR", "SCAN", "TIMBRE", "COLOR",
+      "REDUCE", "ALGO", "RATIO", "LEVS", "FB", "MOD",
+      "PORT", "CHANNEL", "CHN", "BANK", "PROGRAM", "PGM",
+      "CC1", "CC2", "CC3", "CC4", "TEMPO", "GROOVE", "SCALE",
+      "EQ", "CHO_RETURN", "DEL_RETURN", "REV_RETURN", "OUTPUT_VOL",
+      "INPUT_VOL", "INPUT_PAN", "INPUT_LIMIT", "MIX_DC", "INPUT_SOURCE",
+      "LIMITER", "INPUT_CHORUS", "USB_CHORUS", "DJ_FILTER", "INPUT_DELAY",
+      "USB_DELAY", "OTT", "INPUT_REVERB", "USB_REVERB", "GAIN", "FREQ", "MODE"
+  };
+  int count = (int)(sizeof(known_labels) / sizeof(known_labels[0]));
+  for (int i = 0; i < count; i++) {
+    if (strcmp(clean, known_labels[i]) == 0) return 1;
+  }
+  return 0;
+}
+
+typedef struct {
+  int start_col;
+  int end_col;
+  char text[32];
+  int is_label;
+} row_token_t;
+
+static int resolve_multi_column_row(const char *line, int cursor_col,
+                                   char *out_input, size_t input_len,
+                                   char *out_value, size_t value_len) {
+  if (!line || cursor_col < 0) return 0;
+
+  row_token_t tokens[16];
+  int token_count = 0;
+  int len = (int)strlen(line);
+  int i = 0;
+
+  while (i < len && token_count < 16) {
+    while (i < len && line[i] == ' ') i++;
+    if (i >= len) break;
+
+    int start = i;
+    while (i < len && line[i] != ' ') i++;
+    int end = i;
+
+    int tlen = end - start;
+    if (tlen > 31) tlen = 31;
+    tokens[token_count].start_col = start;
+    tokens[token_count].end_col = end;
+    memcpy(tokens[token_count].text, line + start, tlen);
+    tokens[token_count].text[tlen] = '\0';
+    str_trim(tokens[token_count].text);
+
+    // Check if token ends with ':' or '.' (e.g. "TRANSP.") or is a known label
+    int has_colon = 0;
+    int tlen_text = (int)strlen(tokens[token_count].text);
+    if (tlen_text > 0 && (tokens[token_count].text[tlen_text - 1] == ':' ||
+                          (tokens[token_count].text[tlen_text - 1] == '.' &&
+                           !strstr(tokens[token_count].text, ".WAV") && !strstr(tokens[token_count].text, ".wav") &&
+                           !strstr(tokens[token_count].text, ".AIF") && !strstr(tokens[token_count].text, ".aif") &&
+                           !strstr(tokens[token_count].text, ".M8S") && !strstr(tokens[token_count].text, ".m8s") &&
+                           !strstr(tokens[token_count].text, ".M8I") && !strstr(tokens[token_count].text, ".m8i")))) {
+      has_colon = 1;
+    }
+    tokens[token_count].is_label = has_colon || is_known_param_label(tokens[token_count].text);
+
+    token_count++;
+  }
+
+  if (token_count == 0) return 0;
+
+  // Merge compound labels like "LOOP" + "ST", "INST" + "TYPE", "PLAY" + "MODE", "FINE" + "TUNE", "CUT" + "OFF"
+  for (int t = 0; t < token_count - 1; t++) {
+    char clean0[32], clean1[32];
+    snprintf(clean0, sizeof(clean0), "%s", tokens[t].text);
+    snprintf(clean1, sizeof(clean1), "%s", tokens[t + 1].text);
+    str_clean_punct(clean0); str_clean_punct(clean1);
+    for (size_t c = 0; c < strlen(clean0); c++) clean0[c] = (char)toupper((unsigned char)clean0[c]);
+    for (size_t c = 0; c < strlen(clean1); c++) clean1[c] = (char)toupper((unsigned char)clean1[c]);
+
+    if ((strcmp(clean0, "LOOP") == 0 && strcmp(clean1, "ST") == 0) ||
+        (strcmp(clean0, "INST") == 0 && strcmp(clean1, "TYPE") == 0) ||
+        (strcmp(clean0, "PLAY") == 0 && strcmp(clean1, "MODE") == 0) ||
+        (strcmp(clean0, "FINE") == 0 && strcmp(clean1, "TUNE") == 0) ||
+        (strcmp(clean0, "CUT") == 0 && strcmp(clean1, "OFF") == 0) ||
+        (strcmp(clean0, "MOD") == 0 && (strcmp(clean1, "RATE") == 0 || strcmp(clean1, "DEST") == 0 || strcmp(clean1, "AMT") == 0))) {
+      snprintf(tokens[t].text, sizeof(tokens[t].text), "%s %s", clean0, clean1);
+      tokens[t].end_col = tokens[t + 1].end_col;
+      tokens[t].is_label = 1;
+      // Shift remaining tokens left
+      for (int k = t + 1; k < token_count - 1; k++) {
+        tokens[k] = tokens[k + 1];
+      }
+      token_count--;
+    }
+  }
+
+  // Find token at or closest to cursor_col
+  int cur_idx = -1;
+  for (int t = 0; t < token_count; t++) {
+    if (cursor_col >= tokens[t].start_col && cursor_col <= tokens[t].end_col) {
+      cur_idx = t;
+      break;
+    }
+  }
+  if (cur_idx == -1) {
+    // Pick nearest token
+    int min_dist = 999;
+    for (int t = 0; t < token_count; t++) {
+      int dist = abs(cursor_col - tokens[t].start_col);
+      if (dist < min_dist) {
+        min_dist = dist;
+        cur_idx = t;
+      }
+    }
+  }
+
+  if (cur_idx == -1) return 0;
+
+  char resolved_label[64] = {0};
+  char resolved_value[64] = {0};
+
+  if (tokens[cur_idx].is_label) {
+    // Cursor is directly on the LABEL
+    snprintf(resolved_label, sizeof(resolved_label), "%s", tokens[cur_idx].text);
+    // Corresponding value is the next token if it is a value
+    if (cur_idx + 1 < token_count && !tokens[cur_idx + 1].is_label) {
+      snprintf(resolved_value, sizeof(resolved_value), "%s", tokens[cur_idx + 1].text);
+    } else if (cur_idx + 1 < token_count) {
+      snprintf(resolved_value, sizeof(resolved_value), "%s", tokens[cur_idx + 1].text);
+    } else {
+      snprintf(resolved_value, sizeof(resolved_value), "%s", tokens[cur_idx].text);
+    }
+  } else {
+    // Cursor is on a VALUE
+    snprintf(resolved_value, sizeof(resolved_value), "%s", tokens[cur_idx].text);
+    // Find closest preceding label
+    int label_idx = -1;
+    for (int t = cur_idx - 1; t >= 0; t--) {
+      if (tokens[t].is_label) {
+        label_idx = t;
+        break;
+      }
+    }
+    if (label_idx != -1) {
+      snprintf(resolved_label, sizeof(resolved_label), "%s", tokens[label_idx].text);
+    } else {
+      snprintf(resolved_label, sizeof(resolved_label), "%s", tokens[cur_idx].text);
+    }
+  }
+
+  standardize_parameter_label(resolved_label, sizeof(resolved_label));
+  str_clean_punct(resolved_value);
+  str_trim(resolved_value);
+
+  if (strlen(resolved_label) > 0) {
+    snprintf(out_input, input_len, "%s", resolved_label);
+    if (strlen(resolved_value) > 0) {
+      snprintf(out_value, value_len, "%s", resolved_value);
+    }
+    return 1;
+  }
+  return 0;
 }
 
 // Static UI Field mapping for canonical screens
@@ -1506,23 +1687,11 @@ static void analyze_screen_state(void) {
         }
       }
 
-      // 3. Parameter Rows: Left Label Extraction & Standardization
+      // 3. Parameter Rows: Advanced Multi-Column Row Resolver (Left, Middle, Right columns)
       if (!matched) {
-        char left_label[32] = {0};
-        extract_left_label(line, col, left_label, sizeof(left_label));
-        if (strlen(left_label) > 0) {
-          standardize_parameter_label(left_label, sizeof(left_label));
-          snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "%s", left_label);
+        if (resolve_multi_column_row(line, col, g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                                     g_screen_state.current_value, sizeof(g_screen_state.current_value))) {
           matched = 1;
-        } else {
-          // If cursor landed directly on a parameter label keyword
-          char cur_tok[32] = {0};
-          snprintf(cur_tok, sizeof(cur_tok), "%s", g_screen_state.current_value);
-          standardize_parameter_label(cur_tok, sizeof(cur_tok));
-          if (strlen(cur_tok) > 0 && strcmp(cur_tok, "---") != 0 && !isxdigit((unsigned char)cur_tok[0])) {
-            snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "%s", cur_tok);
-            matched = 1;
-          }
         }
       }
     }
@@ -1648,16 +1817,17 @@ static void analyze_screen_state(void) {
       }
     }
 
-    // If not matched, try Left-Label scanning heuristic
+    // If not matched, try Advanced Multi-Column Row Resolver
     if (!matched) {
-      char left_label[32] = {0};
-      extract_left_label(g_screen_state.text[row], col, left_label, sizeof(left_label));
-      if (strlen(left_label) > 0) {
-        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "%s", left_label);
-      } else {
-        // Fallback to row/col coordinate
-        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "CELL_R%02d_C%02d", row, col);
+      if (resolve_multi_column_row(g_screen_state.text[row], col, g_screen_state.active_input, sizeof(g_screen_state.active_input),
+                                   g_screen_state.current_value, sizeof(g_screen_state.current_value))) {
+        matched = 1;
       }
+    }
+
+    // If still not matched, fallback to row/col coordinate
+    if (!matched) {
+      snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "CELL_R%02d_C%02d", row, col);
     }
   } else {
     snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "NO_CURSOR");
