@@ -208,6 +208,7 @@ The table below outlines the standardized field identifiers returned in `input` 
 | **`SCALE`** | `NOTE_<XX>`, `ENABLE_<XX>`, `OFFSET_<XX>`, `SCALE_NUM`, `KEY`, `NAME` | 12 Note interval configurations (`00`..`0B` for C through B) with note name, enable status, microtonal offset, plus root key, preset name, and scale index. |
 | **`KEYBOARD`** | `NAME_BUFFER`, `PICKER_CHAR`, `KEY_CHAR`, `SPACE_BTN`, `OK_BTN`, `CANCEL_BTN`, `CLEAR_BTN`, `DELETE_BTN` | Interactive text entry and character picker overlay. Captures active name buffer string, individually focused grid characters (`PICKER_CHAR`), and action buttons. |
 | **`FILE_BROWSER`** | `CURRENT_PATH`, `PARENT_DIR`, `DIRECTORY_ITEM`, `SONG_FILE`, `INSTRUMENT_FILE`, `SAMPLE_FILE`, `FILE_ITEM`, `LOAD_BTN`, `CANCEL_BTN`, `SELECT_BTN`, `NEW_BTN`, `DELETE_BTN` | Directory traversal, project loading (`PROJECT > LOAD`), sample browsing, and preset management with directory paths, file categorization, and modal action buttons. |
+| **`CONFIRM_DIALOG`** | `OK_BTN`, `CANCEL_BTN`, `YES_BTN`, `NO_BTN`, `DELETE_BTN`, `PROMPT_TEXT`, `ACTION_BTN` | Modal confirmation and alert prompts (e.g. `LOSE CHANGES TO CURRENT SONG?`, `OVERWRITE EXISTING FILE?`, `DELETE?`). Header captures the full warning prompt text. |
 | **Synth & FX Pages** | Dynamic Left-Label (e.g. `CUTOFF`, `RES`, `VOLUME`, `PITCH`) | Dynamically extracted via left-label scanning, with fallback to `CELL_R<row>_C<col>`. |
 
 ### State JSON Schema

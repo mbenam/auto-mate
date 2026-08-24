@@ -1103,6 +1103,48 @@ static void test_virtual_screen_file_browser(void) {
   TEST_ASSERT(strstr(json, "\"value\":\"/SAMPLES\"") != NULL, "Empty gap row resolves value to /SAMPLES");
 }
 
+static void test_virtual_screen_confirm_dialog(void) {
+  printf("Running test_virtual_screen_confirm_dialog (modal confirmation & alert prompts)...\n");
+  ai_screen_init();
+  ai_screen_reset();
+
+  // Draw Prompt: "LOSE CHANGES TO CURRENT SONG?" on row 12, "  OK  CANCEL" on row 15
+  feed_text_row(12, 0, "LOSE CHANGES TO CURRENT SONG?");
+  feed_text_row(15, 0, "  OK  CANCEL");
+
+  char json[2048];
+
+  // 1. Test OK button (col 2, row 15)
+  draw_corner_cursor(2, 15, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"CONFIRM_DIALOG\"") != NULL, "Screen identified as CONFIRM_DIALOG");
+  TEST_ASSERT(strstr(json, "\"header\":\"LOSE CHANGES TO CURRENT SONG?\"") != NULL, "Header extracted prompt message");
+  TEST_ASSERT(strstr(json, "\"input\":\"OK_BTN\"") != NULL, "Input is OK_BTN");
+  TEST_ASSERT(strstr(json, "\"value\":\"OK\"") != NULL, "Value is OK");
+
+  // 2. Test CANCEL button (col 6, row 15)
+  draw_corner_cursor(6, 15, 6);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"CANCEL_BTN\"") != NULL, "Input is CANCEL_BTN");
+  TEST_ASSERT(strstr(json, "\"value\":\"CANCEL\"") != NULL, "Value is CANCEL");
+
+  // 3. Test Overwrite Prompt with YES / NO buttons
+  ai_screen_reset();
+  feed_text_row(10, 0, "OVERWRITE EXISTING FILE?");
+  feed_text_row(14, 0, "  YES  NO");
+
+  draw_corner_cursor(2, 14, 3);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"screen\":\"CONFIRM_DIALOG\"") != NULL, "Overwrite prompt identified as CONFIRM_DIALOG");
+  TEST_ASSERT(strstr(json, "\"input\":\"YES_BTN\"") != NULL, "Input is YES_BTN");
+  TEST_ASSERT(strstr(json, "\"value\":\"YES\"") != NULL, "Value is YES");
+
+  draw_corner_cursor(7, 14, 2);
+  ai_screen_get_state_json(json, sizeof(json));
+  TEST_ASSERT(strstr(json, "\"input\":\"NO_BTN\"") != NULL, "Input is NO_BTN");
+  TEST_ASSERT(strstr(json, "\"value\":\"NO\"") != NULL, "Value is NO");
+}
+
 int main(int argc, char *argv[]) {
   (void)argc;
   (void)argv;
@@ -1121,6 +1163,7 @@ int main(int argc, char *argv[]) {
   test_virtual_screen_scale();
   test_virtual_screen_inst_pool();
   test_virtual_screen_file_browser();
+  test_virtual_screen_confirm_dialog();
   test_virtual_screen_synth_left_label();
   test_virtual_screen_keyboard();
   test_audio_recording();

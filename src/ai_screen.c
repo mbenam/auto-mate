@@ -433,6 +433,9 @@ static const m8_static_field_map_s g_field_map[] = {
 
     // FILE_BROWSER Header
     {"FILE_BROWSER", 0, 1, 0, 39, "CURRENT_PATH"},
+
+    // CONFIRM_DIALOG Action
+    {"CONFIRM_DIALOG", 0, 29, 0, 39, "CONFIRM_ACTION"},
 };
 
 static void snap_cursor_to_token(int row, int *col, int *width) {
@@ -776,6 +779,24 @@ static void snap_cursor_to_token(int row, int *col, int *width) {
     }
   }
 
+  // CONFIRM_DIALOG Screen (Confirmation / Alert Prompts)
+  if (strcmp(g_screen_state.active_screen, "CONFIRM_DIALOG") == 0) {
+    const char *dialog_btns[] = {"CANCEL", "DELETE", "CLEAR", "CONFIRM", "YES", "NO", "OK", NULL};
+    for (int b = 0; dialog_btns[b] != NULL; b++) {
+      const char *btn = dialog_btns[b];
+      const char *pos = strstr(line, btn);
+      if (pos != NULL) {
+        int b_col = (int)(pos - line);
+        int b_len = (int)strlen(btn);
+        if (c >= b_col && c < b_col + b_len) {
+          *col = b_col;
+          *width = b_len;
+          return;
+        }
+      }
+    }
+  }
+
   int start = c;
   int end = c;
 
@@ -790,9 +811,9 @@ static void snap_cursor_to_token(int row, int *col, int *width) {
 }
 
 static void analyze_screen_state(void) {
-  // 1. Identify Screen from rows 0 to 4
+  // 1. Identify Header text from the first non-empty row (checking rows 0 to 14 for headers or centered dialog prompts)
   char header_raw[M8_SCREEN_COLS + 1] = {0};
-  for (int r = 0; r <= 4; r++) {
+  for (int r = 0; r <= 14; r++) {
     char temp[M8_SCREEN_COLS + 1];
     snprintf(temp, sizeof(temp), "%s", g_screen_state.text[r]);
     str_trim(temp);
@@ -837,8 +858,27 @@ static void analyze_screen_state(void) {
     }
   }
 
+  // Check for Confirmation Dialog / Modal (e.g. "LOSE CHANGES TO CURRENT SONG?", "OVERWRITE?", "DELETE?", "OK CANCEL", "YES NO")
+  int is_confirm_dialog = 0;
+  if (!is_keyboard && !has_dir_entry) {
+    for (int r = 0; r < M8_SCREEN_ROWS; r++) {
+      const char *line = g_screen_state.text[r];
+      if (strchr(line, '?') != NULL ||
+          strstr(line, "LOSE CHANGES") != NULL ||
+          strstr(line, "OVERWRITE") != NULL ||
+          strstr(line, "ARE YOU SURE") != NULL ||
+          ((strstr(line, "OK") != NULL || strstr(line, "YES") != NULL) &&
+           (strstr(line, "CANCEL") != NULL || strstr(line, "NO") != NULL))) {
+        is_confirm_dialog = 1;
+        break;
+      }
+    }
+  }
+
   if (is_keyboard) {
     snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "KEYBOARD");
+  } else if (is_confirm_dialog) {
+    snprintf(g_screen_state.active_screen, sizeof(g_screen_state.active_screen), "CONFIRM_DIALOG");
   } else if (has_dir_entry ||
              strstr(header_raw, "DIRECTORY") != NULL || strstr(header_raw, "DIR:") != NULL ||
              strstr(header_raw, "LOAD") != NULL || strstr(header_raw, "SAVE") != NULL ||
@@ -1413,6 +1453,33 @@ static void analyze_screen_state(void) {
           snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "KEY_CHAR");
           matched = 1;
         }
+      }
+    }
+
+    // Special Dynamic Screen Matrix: CONFIRM_DIALOG (Modal Prompts & Alerts)
+    else if (strcmp(g_screen_state.active_screen, "CONFIRM_DIALOG") == 0) {
+      const char *val = g_screen_state.current_value;
+      if (strcmp(val, "OK") == 0) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "OK_BTN");
+        matched = 1;
+      } else if (strcmp(val, "CANCEL") == 0) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "CANCEL_BTN");
+        matched = 1;
+      } else if (strcmp(val, "YES") == 0) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "YES_BTN");
+        matched = 1;
+      } else if (strcmp(val, "NO") == 0) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "NO_BTN");
+        matched = 1;
+      } else if (strcmp(val, "DELETE") == 0 || strcmp(val, "DEL") == 0) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "DELETE_BTN");
+        matched = 1;
+      } else if (strchr(val, '?') != NULL) {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "PROMPT_TEXT");
+        matched = 1;
+      } else {
+        snprintf(g_screen_state.active_input, sizeof(g_screen_state.active_input), "ACTION_BTN");
+        matched = 1;
       }
     }
 
